@@ -1,0 +1,131 @@
+name: factor-monitor backfill
+
+# Carga histórica inicial de velas de 5 minutos (SPEC v3 §3.1). Manual.
+# Cada trabajo de la matriz descarga un instrumento y un rango de años y deja
+# el parquet como artefacto; un único trabajo final publica en la release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      instruments:
+        description: "IDs lógicos separados por comas, o 'all'"
+        default: all
+      start_year:
+        description: "Primer año"
+        default: "2017"
+      end_year:
+        description: "Último año (vacío = año en curso)"
+        default: ""
+      engine:
+        description: "Motor de descarga"
+        type: choice
+        options: [node, bi5]
+        default: node
+
+concurrency:
+  group: factor-monitor-data-store
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: factor_monitor
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: factor_monitor/requirements-lock.txt
+      - run: pip install -r requirements-lock.txt && pip install --no-deps -e .
+      - id: matrix
+        env:
+          INSTRUMENTS: ${{ inputs.instruments }}
+          START_YEAR: ${{ inputs.start_year }}
+          END_YEAR: ${{ inputs.end_year }}
+        run: |
+          args=(--instruments "$INSTRUMENTS" --start-year "$START_YEAR")
+          [ -n "$END_YEAR" ] && args+=(--end-year "$END_YEAR")
+          echo "matrix=$(python -m factor_monitor.nightly.build_bars matrix "${args[@]}")" >> "$GITHUB_OUTPUT"
+
+  download:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: factor_monitor/requirements-lock.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: factor_monitor/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: pip install -r requirements-lock.txt && pip install --no-deps -e .
+      - env:
+          INSTRUMENT: ${{ matrix.instrument }}
+          YEARS: ${{ matrix.years }}
+          ENGINE: ${{ inputs.engine }}
+        run: >
+          python -m factor_monitor.nightly.build_bars backfill
+          --instrument "$INSTRUMENT" --years "$YEARS" --engine "$ENGINE"
+          --out out --meta "out/meta_${INSTRUMENT}_${YEARS}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bars-${{ matrix.instrument }}-${{ matrix.years }}
+          path: factor_monitor/out/
+          if-no-files-found: ignore
+          retention-days: 3
+
+  publish:
+    needs: [plan, download]
+    if: ${{ always() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: factor_monitor/requirements-lock.txt
+      - run: pip install -r requirements-lock.txt && pip install --no-deps -e .
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bars-*
+          path: factor_monitor/in
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p in
+          python -m factor_monitor.nightly.build_bars publish --src in
+          python -m factor_monitor.nightly.build_bars quality --out reports/data_quality.csv
+          python - <<'EOF'
+          import json, pathlib
+          warnings = []
+          for p in sorted(pathlib.Path("in").glob("meta_*.json")):
+              warnings += json.loads(p.read_text())["warnings"]
+          print(f"{len(warnings)} avisos")
+          for w in warnings:
+              print(f"::warning::{w['message']}")
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-quality
+          path: factor_monitor/reports/data_quality.csv

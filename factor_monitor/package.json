@@ -1,0 +1,8 @@
+{
+  "name": "factor-monitor-downloader",
+  "private": true,
+  "description": "Dependencia fijada de dukascopy-node para la descarga nocturna",
+  "dependencies": {
+    "dukascopy-node": "1.50.0"
+  }
+}

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "factor-monitor"
+version = "0.1.0"
+description = "Monitor de drivers y dislocaciones intradía con modelos de factores"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy==2.4.6",
+    "pandas==3.0.6",
+    "pyarrow==25.0.1",
+    "PyYAML==6.0.3",
+    "exchange_calendars==4.13.2",
+]
+
+[project.optional-dependencies]
+nightly = []
+live = []
+dev = ["pytest==9.1.1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+factor_monitor = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,64 @@
+# Universo de la fase 1 (SPEC v3 §4).
+#
+# IDs de Dukascopy verificados contra los metadatos de dukascopy-node 1.50.0
+# (el comentario "desde" indica el inicio de los minutos cuando limita la historia).
+# Un ID a null significa "no disponible": el instrumento se excluye con aviso.
+# `point_factor` solo lo usa el lector .bi5 de respaldo (precio = entero / factor);
+# es una estimación y debe calibrarse con `build_bars calibrate` antes de usarlo.
+# mt5_symbol se rellena tras el inventario de Darwinex (§3.2).
+
+overlap_threshold: 0.20        # §5.3: exclusión de factores que contienen al objetivo
+
+instruments:
+  # --- Índices objetivo -------------------------------------------------------
+  SPX:   {kind: target, dukascopy_id: usa500idxusd,  mt5_symbol: null, session: us, exchange: XNYS, point_factor: 1000}
+  SX5E:  {kind: target, dukascopy_id: eusidxeur,     mt5_symbol: null, session: eu, exchange: XETR, point_factor: 1000}
+  DAX:   {kind: target, dukascopy_id: deuidxeur,     mt5_symbol: null, session: eu, exchange: XETR, point_factor: 1000}
+  CAC:   {kind: target, dukascopy_id: fraidxeur,     mt5_symbol: null, session: eu, exchange: XPAR, point_factor: 1000}
+  IBEX:  {kind: target, dukascopy_id: espidxeur,     mt5_symbol: null, session: eu, exchange: XMAD, point_factor: 1000}
+
+  # --- Instrumentos de los factores ------------------------------------------
+  NDX:    {kind: factor, dukascopy_id: usatechidxusd, mt5_symbol: null, session: us, exchange: XNYS, point_factor: 1000}
+  BRENT:  {kind: factor, dukascopy_id: brentcmdusd,   mt5_symbol: null, point_factor: 1000}
+  BUND:   {kind: factor, dukascopy_id: bundtreur,     mt5_symbol: null, point_factor: 1000}   # desde may-2016
+  TBOND:  {kind: factor, dukascopy_id: ustbondtrusd,  mt5_symbol: null, point_factor: 1000}   # desde dic-2018
+  EURUSD: {kind: factor, dukascopy_id: eurusd,        mt5_symbol: null, point_factor: 100000}
+
+  # --- Componentes de las cestas sectoriales (§4.2) ---------------------------
+  # ISP, UCG y ENI solo tienen minutos desde dic-2020. TotalEnergies es `fpfreur`.
+  # OMV no existe en Dukascopy: entra en la cesta diaria con yfinance (§3.3).
+  BNP:   {kind: component, dukascopy_id: bnpfreur, point_factor: 1000, yahoo_ticker: BNP.PA,  exchange: XPAR, session: eu}
+  SAN:   {kind: component, dukascopy_id: saneseur, point_factor: 1000, yahoo_ticker: SAN.MC,  exchange: XMAD, session: eu}
+  INGA:  {kind: component, dukascopy_id: inganleur, point_factor: 1000, yahoo_ticker: INGA.AS, exchange: XAMS, session: eu}
+  ISP:   {kind: component, dukascopy_id: ispiteur, point_factor: 1000, yahoo_ticker: ISP.MI,  exchange: XMIL, session: eu}
+  UCG:   {kind: component, dukascopy_id: ucgiteur, point_factor: 1000, yahoo_ticker: UCG.MI,  exchange: XMIL, session: eu}
+  BBVA:  {kind: component, dukascopy_id: bbvaeseur, point_factor: 1000, yahoo_ticker: BBVA.MC, exchange: XMAD, session: eu}
+  DBK:   {kind: component, dukascopy_id: dbkdeeur, point_factor: 1000, yahoo_ticker: DBK.DE,  exchange: XETR, session: eu}
+  GLE:   {kind: component, dukascopy_id: glefreur, point_factor: 1000, yahoo_ticker: GLE.PA,  exchange: XPAR, session: eu}
+  TTE:   {kind: component, dukascopy_id: fpfreur, point_factor: 1000, yahoo_ticker: TTE.PA,  exchange: XPAR, session: eu}
+  ENI:   {kind: component, dukascopy_id: eniiteur, point_factor: 1000, yahoo_ticker: ENI.MI,  exchange: XMIL, session: eu}
+  REP:   {kind: component, dukascopy_id: repeseur, point_factor: 1000, yahoo_ticker: REP.MC,  exchange: XMAD, session: eu}
+  GALP:  {kind: component, dukascopy_id: galppteur, point_factor: 1000, yahoo_ticker: GALP.LS, exchange: XLIS, session: eu}
+  OMV:   {kind: component, dukascopy_id: null, yahoo_ticker: OMV.VI,  exchange: XWBO, session: eu}
+
+# Factores (§4.3). `sign: -1` invierte el retorno (bonos: sube = sube la
+# rentabilidad; EUR/USD invertido = dólar). `contains` declara el peso con el
+# que el factor contiene a cada objetivo, para la regla de §5.3.
+factors:
+  BRENT: {instrument: BRENT,  sign: 1}
+  BUND:  {instrument: BUND,   sign: -1}
+  TBOND: {instrument: TBOND,  sign: -1}
+  USD:   {instrument: EURUSD, sign: -1}
+  IA:    {long: NDX, short: SPX, contains: {SPX: 1.0}}
+
+# Objetivos (§4.1, §5.1, §5.2).
+targets:
+  SPX:    {session: us, exchange: XNYS, candidates: [BRENT, TBOND, USD],     market: {type: none}}
+  SX5E:   {session: eu, exchange: XETR, candidates: [BRENT, BUND, USD, IA],  market: {type: mean, members: [DAX, CAC, IBEX]}}
+  DAX:    {session: eu, exchange: XETR, candidates: [BRENT, BUND, USD, IA],  market: {type: mean, members: [SX5E, CAC, IBEX]}}
+  CAC:    {session: eu, exchange: XPAR, candidates: [BRENT, BUND, USD, IA],  market: {type: mean, members: [SX5E, DAX, IBEX]}}
+  IBEX:   {session: eu, exchange: XMAD, candidates: [BRENT, BUND, USD, IA],  market: {type: mean, members: [SX5E, DAX, CAC]}}
+  BANKS:  {session: eu, exchange: XETR, candidates: [BUND, TBOND],           market: {type: mean, members: [SX5E]},
+           basket: [BNP, SAN, INGA, ISP, UCG, BBVA, DBK, GLE], reference_etf: EXV1.DE}
+  ENERGY: {session: eu, exchange: XETR, candidates: [BRENT, USD],            market: {type: mean, members: [SX5E]},
+           basket: [TTE, ENI, REP, GALP, OMV], reference_etf: EXH1.DE}
