@@ -39,7 +39,11 @@ SIDES = ("bid", "ask")
 
 
 class DownloadError(RuntimeError):
-    pass
+    """Fallo de descarga. `partial` lleva los minutos ya descargados (si los hay)."""
+
+    def __init__(self, message: str, partial: "pd.DataFrame | None" = None):
+        super().__init__(message)
+        self.partial = partial
 
 
 class Pacer:
@@ -49,7 +53,7 @@ class Pacer:
         self,
         interval: float = 10.0,
         rate_limit_pause: float = 60.0,
-        max_rate_limit_retries: int = 8,
+        max_rate_limit_retries: int = 3,
         sleep: Callable[[float], None] = _time.sleep,
         clock: Callable[[], float] = _time.monotonic,
     ):
@@ -152,25 +156,36 @@ def fetch_m1_jetta(
     pacer: Pacer | None = None,
     sides: tuple[str, ...] = SIDES,
     getter: Callable[[str], bytes] | None = None,
+    skip_days: set[date] | None = None,
 ) -> pd.DataFrame:
     """Minutos de `start` a `end` (incluidos), un día por petición, sin sábados.
 
     Con `sides=("bid",)` la mitad de peticiones: el ask se deja igual al bid y el
-    spread queda en NaN.
+    spread queda en NaN. `skip_days` evita volver a pedir días ya guardados.
+    Si la descarga se corta, el DownloadError lleva en `partial` lo descargado.
     """
     pacer = pacer or Pacer()
     get = getter or (lambda url: http_get_paced(url, pacer))
     frames = {side: [] for side in sides}
+
+    def assemble() -> pd.DataFrame:
+        n = min(len(f) for f in frames.values()) if frames else 0
+        joined = {s: pd.concat(f[:n]) if n else None for s, f in frames.items()}
+        if "ask" not in sides:
+            joined["ask"] = joined.get("bid")
+        return _join_sides(joined, allow_same=("ask" not in sides))
+
     day = start
     while day <= end:
-        if day.weekday() != 5:
+        if day.weekday() != 5 and not (skip_days and day in skip_days):
+            try:
+                got = {side: decode_jetta_candles(get(jetta_url(code, day, side))) for side in sides}
+            except DownloadError as e:
+                raise DownloadError(str(e), partial=assemble()) from e
             for side in sides:
-                frames[side].append(decode_jetta_candles(get(jetta_url(code, day, side))))
+                frames[side].append(got[side])
         day += timedelta(days=1)
-    joined = {s: pd.concat(f) if f else None for s, f in frames.items()}
-    if "ask" not in sides:
-        joined["ask"] = joined.get("bid")
-    return _join_sides(joined, allow_same=("ask" not in sides))
+    return assemble()
 
 
 # --------------------------------------------------------------------------- .bi5
@@ -397,7 +412,7 @@ def download_m1(
     if engine == "jetta":
         if code is None:
             raise DownloadError(f"{symbol}: falta el código de jetta (dukascopy_code)")
-        return fetch_m1_jetta(code, start, end, pacer=pacer, sides=sides, getter=kwargs.get("getter"))
+        return fetch_m1_jetta(code, start, end, pacer=pacer, sides=sides, getter=kwargs.get("getter"), skip_days=kwargs.get("skip_days"))
     if engine == "node":
         try:
             node_kw = {k: v for k, v in kwargs.items() if k in ("runner", "cwd", "sleep", "rate_limit_pause")}

@@ -28,8 +28,8 @@ on:
         description: "'bid,ask' o 'bid' (la mitad de peticiones, sin spread)"
         default: "bid,ask"
       parallel:
-        description: "Trabajos en paralelo (cada runner tiene su IP)"
-        default: "6"
+        description: "Trabajos en paralelo (algunos runners comparten IP y Dukascopy los bloquea)"
+        default: "4"
 
 concurrency:
   group: factor-monitor-data-store
@@ -93,10 +93,13 @@ jobs:
           ENGINE: ${{ inputs.engine }}
           PACE: ${{ inputs.pace }}
           SIDES: ${{ inputs.sides }}
+          GH_TOKEN: ${{ github.token }}
+        # --resume: solo se piden los días que no estén ya en el almacén, así que
+        # relanzar el workflow completa lo que falte sin repetir descargas.
         run: >
           python -m factor_monitor.nightly.build_bars backfill
           --instrument "$INSTRUMENT" --years "$YEARS" --engine "$ENGINE"
-          --pace "$PACE" --sides "$SIDES"
+          --pace "$PACE" --sides "$SIDES" --resume
           --out out --meta "out/meta_${INSTRUMENT}_${YEARS}.json"
       - uses: actions/upload-artifact@v4
         with:

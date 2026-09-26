@@ -83,14 +83,22 @@ class DownloadOptions:
         return self._pacer
 
 
-def download_bars(inst: Instrument, start: date, end: date, opts: DownloadOptions | str) -> pd.DataFrame:
+def download_bars(
+    inst: Instrument, start: date, end: date, opts: DownloadOptions | str, skip_days: set[date] | None = None
+) -> pd.DataFrame:
+    """Velas de 5 min. Si la descarga se corta, el DownloadError lleva las velas parciales."""
     if isinstance(opts, str):
         opts = DownloadOptions(engine=opts)
-    m1 = download_m1(
-        inst.dukascopy_id, start, end, inst.point_factor, engine=opts.engine,
-        code=inst.dukascopy_code, pacer=opts.pacer, sides=opts.sides,
-    )  # fmt: skip
-    return m1_to_bars(m1, bid_only="ask" not in opts.sides)
+    bid_only = "ask" not in opts.sides
+    try:
+        m1 = download_m1(
+            inst.dukascopy_id, start, end, inst.point_factor, engine=opts.engine,
+            code=inst.dukascopy_code, pacer=opts.pacer, sides=opts.sides, skip_days=skip_days,
+        )  # fmt: skip
+    except DownloadError as e:
+        partial = m1_to_bars(e.partial, bid_only=bid_only) if e.partial is not None and len(e.partial) else None
+        raise DownloadError(str(e), partial=partial) from e
+    return m1_to_bars(m1, bid_only=bid_only)
 
 
 # ---------------------------------------------------------------------------- comandos
@@ -110,16 +118,27 @@ def cmd_backfill(args, universe: Universe) -> None:
     runlog = RunLog()
     failed = []
     opts = options_from(args)
+    store = BarStore(make_backend(args), Path(args.cache)) if args.resume else None
     for year in range(int(y0), int(y1 or y0) + 1):
         start = date(year, 1, 1)
         end = min(date(year, 12, 31), yesterday_utc())
         if start > end:
             continue
+        skip = None
+        if store is not None:
+            existing = store.read(inst.id, year)
+            if existing is not None and len(existing):
+                skip = set(existing.index.normalize().date)
+                log.info("%s %s: %d días ya en el almacén; solo se piden los que faltan", inst.id, year, len(skip))
         try:
-            bars = download_bars(inst, start, end, opts)
+            bars = download_bars(inst, start, end, opts, skip_days=skip)
         except DownloadError as e:
             runlog.warn(STEP, f"{inst.id} {year}: {e}", instrument=inst.id, year=year)
             failed.append(year)
+            if e.partial is not None and len(e.partial):
+                # Lo descargado se publica igualmente: la siguiente ejecución solo pedirá lo que falte.
+                e.partial.to_parquet(out / f"{inst.id}_{year}.parquet")
+                log.info("%s %s: guardadas %d velas parciales", inst.id, year, len(e.partial))
             continue
         if bars.empty:
             runlog.warn(STEP, f"{inst.id} {year}: sin datos", instrument=inst.id, year=year)
@@ -277,6 +296,8 @@ def main(argv: list[str] | None = None) -> None:
     sp.add_argument("--out", required=True)
     add_download_opts(sp)
     sp.add_argument("--meta", default=None)
+    sp.add_argument("--resume", action="store_true", help="Solo pide los días que no estén ya en el almacén")
+    store_opts(sp)
 
     sp = sub.add_parser("publish")
     sp.add_argument("--src", required=True)

@@ -113,7 +113,7 @@ def test_calibrate_factor():
 
 
 def test_backfill_fails_when_a_year_cannot_be_downloaded(tmp_path, monkeypatch):
-    def fake_download(inst, start, end, engine):
+    def fake_download(inst, start, end, engine, skip_days=None):
         if start.year == 2023:
             raise build_bars.DownloadError("429")
         return bars(f"{start.year}-01-03 14:30", 3)
@@ -124,3 +124,36 @@ def test_backfill_fails_when_a_year_cannot_be_downloaded(tmp_path, monkeypatch):
         build_bars.main(["backfill", "--instrument", "SPX", "--years", "2023-2024", "--out", str(tmp_path)])
     assert exc.value.code == 1
     assert (tmp_path / "SPX_2024.parquet").exists() and not (tmp_path / "SPX_2023.parquet").exists()
+
+
+def test_backfill_saves_partial_and_resumes(tmp_path, monkeypatch):
+    import datetime as dt
+
+    monkeypatch.setattr(build_bars, "yesterday_utc", lambda: dt.date(2024, 6, 1))
+    calls = []
+
+    def first(inst, start, end, opts, skip_days=None):
+        calls.append(skip_days)
+        raise build_bars.DownloadError("429 persistente", partial=bars("2024-01-03 14:30", 5))
+
+    monkeypatch.setattr(build_bars, "download_bars", first)
+    out1 = tmp_path / "out1"
+    with pytest.raises(SystemExit):
+        build_bars.main(["backfill", "--instrument", "SPX", "--years", "2024", "--out", str(out1)])
+    assert len(pd.read_parquet(out1 / "SPX_2024.parquet")) == 5   # lo parcial se guarda
+
+    remote = tmp_path / "remote"
+    build_bars.main(["publish", "--src", str(out1), "--store-dir", str(remote), "--cache", str(tmp_path / "c1")])
+
+    def second(inst, start, end, opts, skip_days=None):
+        calls.append(skip_days)
+        return bars("2024-01-04 14:30", 7)
+
+    monkeypatch.setattr(build_bars, "download_bars", second)
+    out2 = tmp_path / "out2"
+    build_bars.main(["backfill", "--instrument", "SPX", "--years", "2024", "--out", str(out2), "--resume",
+                     "--store-dir", str(remote), "--cache", str(tmp_path / "c2")])  # fmt: skip
+    assert calls[-1] == {__import__("datetime").date(2024, 1, 3)}   # no vuelve a pedir el 3 de enero
+    build_bars.main(["publish", "--src", str(out2), "--store-dir", str(remote), "--cache", str(tmp_path / "c3")])
+    final = BarStore(LocalBackend(remote), tmp_path / "c4").read("SPX", 2024)
+    assert len(final) == 12 and final.index.normalize().nunique() == 2

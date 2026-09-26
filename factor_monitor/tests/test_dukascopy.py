@@ -254,3 +254,22 @@ def test_fetch_jetta_skips_saturday_and_bid_only():
     bars5 = m1_to_bars(m1, bid_only=True)
     assert len(bars5) > 0 and bars5["spread"].isna().all()
     assert m1_to_bars(m1).empty   # sin el modo bid_only, ask == bid se descarta
+
+
+def test_jetta_partial_on_failure_and_skip_days():
+    raw = (DATA / "jetta_usa500_20260924_bid.json").read_bytes()
+    urls = []
+
+    def getter(url):
+        urls.append(url)
+        if len(urls) == 3:
+            raise dk.DownloadError("429 persistente")
+        return raw
+
+    with pytest.raises(dk.DownloadError) as exc:
+        dk.fetch_m1_jetta("USA500.IDX-USD", date(2026, 9, 21), date(2026, 9, 25), sides=("bid",), getter=getter)
+    assert exc.value.partial is not None and len(exc.value.partial) > 0   # dos días descargados
+    urls.clear()
+    dk.fetch_m1_jetta("USA500.IDX-USD", date(2026, 9, 21), date(2026, 9, 23), sides=("bid",), getter=lambda u: urls.append(u) or raw,
+                      skip_days={date(2026, 9, 21), date(2026, 9, 22)})  # fmt: skip
+    assert len(urls) == 1 and urls[0].endswith("/2026/9/23")

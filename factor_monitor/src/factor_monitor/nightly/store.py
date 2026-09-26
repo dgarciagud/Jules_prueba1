@@ -73,13 +73,18 @@ class GhReleaseBackend:
         return subprocess.run(cmd, capture_output=True, text=True, check=check)
 
     def _ensure_release(self) -> None:
-        if self._gh("release", "view", self.tag, check=False).returncode != 0:
-            self._gh(
-                "release", "create", self.tag,
-                "--title", "data-store",
-                "--notes", "Almacén de velas de 5 minutos. No borrar.",
-                "--prerelease",
-            )  # fmt: skip
+        if self._gh("release", "view", self.tag, check=False).returncode == 0:
+            return
+        created = self._gh(
+            "release", "create", self.tag,
+            "--title", "data-store",
+            "--notes", "Almacén de velas de 5 minutos. No borrar.",
+            "--prerelease",
+            check=False,
+        )  # fmt: skip
+        # Varios trabajos en paralelo pueden intentar crearla a la vez: basta con que exista.
+        if created.returncode != 0 and self._gh("release", "view", self.tag, check=False).returncode != 0:
+            raise RuntimeError(f"No se pudo crear la release {self.tag}: {created.stderr.strip()[:300]}")
 
     def list_assets(self) -> list[str]:
         out = self._gh("release", "view", self.tag, "--json", "assets").stdout
