@@ -39,6 +39,7 @@ class FakeMT5:
         self.now = now
         self.tick_age = tick_age
         self.symbols = symbols if symbols is not None else [f"{k}.dwx" for k in RAW["instruments"]]
+        self.last_bar_server = None
 
     def initialize(self):
         return True
@@ -59,6 +60,13 @@ class FakeMT5:
         if self.tick_age is None:
             return None
         return SimpleNamespace(time=int(self.now - self.tick_age + self.offset * 3600))
+
+    def copy_rates_from_pos(self, symbol, timeframe, start, count):
+        if self.last_bar_server is None:
+            return None
+        arr = np.zeros(1, dtype=[("time", "i8")])
+        arr["time"] = self.last_bar_server
+        return arr
 
     def copy_rates_range(self, symbol, timeframe, start, end):
         iid = symbol.replace(".dwx", "")
@@ -192,3 +200,14 @@ def test_live_engine_matches_track_record():
     pd.testing.assert_frame_equal(
         hist_alerts[cols].reset_index(drop=True), live_alerts[cols].reset_index(drop=True), check_dtype=False
     )
+
+
+@pytest.mark.parametrize("offset", [2, 3])
+def test_offset_inferred_from_friday_fx_close(tmp_path, offset):
+    # Sábado 26-sep-2026 17:00 UTC; el forex cerró el viernes a las 17:00 NY (21:00 UTC, horario de verano).
+    now = pd.Timestamp("2026-09-26 17:00", tz="UTC").timestamp()
+    fake = FakeMT5(now=now, tick_age=20 * 3600, offset_hours=offset)
+    close_utc = pd.Timestamp("2026-09-25 21:00", tz="UTC").timestamp()
+    fake.last_bar_server = int(close_utc - 300 + offset * 3600)   # apertura de la última vela, hora servidor
+    res = MT5Source(fake, state_path=tmp_path / "s.json", now=lambda: now).detect_offset()
+    assert (res.hours, res.source) == (offset, "fx_close")

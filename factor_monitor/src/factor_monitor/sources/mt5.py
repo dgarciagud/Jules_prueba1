@@ -6,7 +6,9 @@ inyectable para poder probarlo con un mock en Linux/GitHub Actions.
 Hora del servidor: MT5 devuelve las marcas en la hora del broker, no en UTC.
 El desfase se detecta con un símbolo de referencia con tick reciente:
     desfase = round((hora_tick − utc_ahora) / 1 h), válido si el tick tiene < 60 s.
-Sin tick reciente (fin de semana, antes de abrir) se usa el último desfase guardado.
+Sin tick reciente (fin de semana) se deduce de la hora de cierre de la última vela de
+EURUSD, que corresponde al cierre del forex del viernes a las 17:00 de Nueva York; si
+tampoco es posible, se usa el último desfase guardado.
 Convención de velas: MT5 marca la apertura, igual que el resto del paquete.
 """
 
@@ -47,7 +49,7 @@ def import_mt5():
 @dataclass
 class OffsetResult:
     hours: int
-    source: str          # "detected" | "stored" | "default"
+    source: str          # "detected" | "fx_close" | "stored" | "default"
     tick_age_s: float | None = None
 
 
@@ -123,12 +125,36 @@ class MT5Source:
                 self._store_offset(hours)
                 self.offset = OffsetResult(hours, "detected", age)
                 return self.offset
+        inferred = self._offset_from_fx_close(now)
+        if inferred is not None:
+            self._store_offset(inferred)
+            self.offset = OffsetResult(inferred, "fx_close")
+            return self.offset
         if stored is not None:
             self.offset = OffsetResult(stored, "stored")
         else:
             log.warning("Sin tick reciente ni desfase guardado: se asume UTC+0 hasta poder detectarlo")
             self.offset = OffsetResult(0, "default")
         return self.offset
+
+    def _offset_from_fx_close(self, now: float) -> int | None:
+        """Con el mercado cerrado (fin de semana): el forex cierra el viernes a las 17:00 de
+        Nueva York, así que la hora de cierre de la última vela de EURUSD da el desfase."""
+        get = getattr(self.mt5, "copy_rates_from_pos", None)
+        if get is None:
+            return None
+        rates = get(self.reference_symbol, self.mt5.TIMEFRAME_M5, 0, 1)
+        if rates is None or len(rates) == 0:
+            return None
+        last_close_srv = int(rates[-1]["time"]) + 300
+        now_ny = pd.Timestamp(now, unit="s", tz="UTC").tz_convert("America/New_York")
+        friday = (now_ny - pd.Timedelta(days=(now_ny.weekday() - 4) % 7)).normalize() + pd.Timedelta(hours=17)
+        if friday > now_ny:
+            friday -= pd.Timedelta(days=7)
+        if now_ny - friday > pd.Timedelta(days=3):
+            return None  # no es fin de semana: el último cierre no es el del viernes
+        hours = round((last_close_srv - friday.tz_convert("UTC").timestamp()) / 3600)
+        return hours if MIN_OFFSET_H <= hours <= MAX_OFFSET_H else None
 
     def to_utc(self, server_seconds) -> pd.DatetimeIndex:
         if self.offset is None:

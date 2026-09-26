@@ -24,11 +24,11 @@ CANDIDATES = {
     "NDX": ["NDX", "US100", "NAS100", "USTEC", "NASDAQ"],
     "SX5E": ["STOXX50", "EU50", "ESTX50", "SX5E", "EUSTX", "EURO STOXX"],
     "DAX": ["DAX", "GER40", "DE40", "GDAXI", "GER30"],
-    "CAC": ["CAC", "FRA40", "FR40"],
+    "CAC": ["CAC 40", "FRA40", "FR40", "FCHI", "FRANCE"],
     "IBEX": ["IBEX", "ESP35", "SPA35", "ES35"],
-    "BRENT": ["BRENT", "UKOIL", "XBR", "BRN"],
-    "BUND": ["BUND", "FGBL", "DE10Y", "GER10"],
-    "TBOND": ["TBOND", "T-BOND", "USTBOND", "ZB", "US30Y", "UST"],
+    "BRENT": ["BRENT", "UKOIL", "XBR", "BRN", "OIL", "CRUDE", "WTI", "XTI"],
+    "BUND": ["BUND", "FGBL", "DE10Y", "GER10", "GERMAN BOND", "BOBL", "SCHATZ"],
+    "TBOND": ["TBOND", "T-BOND", "USTBOND", "US30Y", "US10Y", "TREASURY", "T-NOTE", "TNOTE", " BOND"],
     "EURUSD": ["EURUSD"],
     "BNP": ["BNP"], "SAN": ["SANTANDER", "SAN.MC", "SAN."], "INGA": ["ING"], "ISP": ["INTESA", "ISP"],
     "UCG": ["UNICREDIT", "UCG"], "BBVA": ["BBVA"], "DBK": ["DEUTSCHE BANK", "DBK"], "GLE": ["SOCIETE", "GLE"],
@@ -56,17 +56,25 @@ def main():
 
         # Hora del servidor frente a UTC (con un símbolo que tenga ticks recientes).
         print("\n--- Hora del servidor ---")
-        for ref in ("EURUSD", "EURUSD.", "EURUSDm"):
-            tick = mt5.symbol_info_tick(ref)
-            if tick and tick.time:
-                now = time.time()
-                offset = round((tick.time - now) / 3600)
-                age = now - (tick.time - offset * 3600)
-                fresh = "reciente" if 0 <= age < 60 else f"antiguo ({age / 60:.0f} min; mercado cerrado?)"
-                print(f"{ref}: servidor UTC{offset:+d} · último tick {fresh}")
-                break
+        now = time.time()
+        tick = mt5.symbol_info_tick("EURUSD")
+        offset = round((tick.time - now) / 3600) if tick and tick.time else None
+        if offset is not None and -12 <= offset <= 14 and 0 <= now - (tick.time - offset * 3600) < 60:
+            print(f"Servidor UTC{offset:+d} (tick reciente de EURUSD)")
         else:
-            print("No hay tick de EURUSD: prueba entre semana con el mercado abierto.")
+            # Mercado cerrado: el forex cierra el viernes a las 17:00 de Nueva York.
+            rates = mt5.copy_rates_from_pos("EURUSD", mt5.TIMEFRAME_M5, 0, 1)
+            if rates is not None and len(rates):
+                from datetime import datetime, timedelta
+                from zoneinfo import ZoneInfo
+                ny = datetime.fromtimestamp(now, ZoneInfo("America/New_York"))
+                friday = (ny - timedelta(days=(ny.weekday() - 4) % 7)).replace(hour=17, minute=0, second=0, microsecond=0)
+                if friday > ny:
+                    friday -= timedelta(days=7)
+                inferred = round((int(rates[-1]["time"]) + 300 - friday.timestamp()) / 3600)
+                print(f"Servidor UTC{inferred:+d} (deducido del cierre del forex del viernes; mercado cerrado)")
+            else:
+                print("No se pudo determinar: prueba entre semana con el mercado abierto.")
 
         print("\n--- Propuesta de mt5_symbol (revisar) ---")
         for iid, keys in CANDIDATES.items():
