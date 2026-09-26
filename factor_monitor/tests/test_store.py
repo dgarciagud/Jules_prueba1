@@ -157,3 +157,13 @@ def test_backfill_saves_partial_and_resumes(tmp_path, monkeypatch):
     build_bars.main(["publish", "--src", str(out2), "--store-dir", str(remote), "--cache", str(tmp_path / "c3")])
     final = BarStore(LocalBackend(remote), tmp_path / "c4").read("SPX", 2024)
     assert len(final) == 12 and final.index.normalize().nunique() == 2
+
+
+def test_year_complete():
+    import datetime as dt
+
+    full = pd.DataFrame({"close": 1.0}, index=pd.bdate_range("2023-01-02", "2023-12-29", tz="UTC"))
+    assert build_bars.year_complete(full, dt.date(2023, 1, 1), dt.date(2023, 12, 31))
+    holey = full.drop(full.loc["2023-06-01":"2023-06-30"].index)
+    assert not build_bars.year_complete(holey, dt.date(2023, 1, 1), dt.date(2023, 12, 31))
+    assert not build_bars.year_complete(full.loc[:"2023-10-31"], dt.date(2023, 1, 1), dt.date(2023, 12, 31))

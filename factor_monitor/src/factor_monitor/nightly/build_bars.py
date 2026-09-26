@@ -104,6 +104,17 @@ def download_bars(
 # ---------------------------------------------------------------------------- comandos
 
 
+def year_complete(existing: pd.DataFrame, start: date, end: date, tolerance_days: int = 7) -> bool:
+    """Año completo: datos desde la primera semana hasta la última y sin huecos de más de 7 días."""
+    days = pd.DatetimeIndex(sorted(set(existing.index.tz_convert("UTC").normalize().tz_localize(None))))
+    if days.empty:
+        return False
+    first_ok = (days[0] - pd.Timestamp(start)).days <= tolerance_days
+    last_ok = (pd.Timestamp(end) - days[-1]).days <= tolerance_days
+    gaps_ok = days.to_series().diff().dt.days.fillna(0).max() <= tolerance_days
+    return bool(first_ok and last_ok and gaps_ok)
+
+
 def cmd_matrix(args, universe: Universe) -> None:
     end_year = args.end_year or yesterday_utc().year
     insts = sorted(select_instruments(universe, args.instruments))
@@ -128,6 +139,9 @@ def cmd_backfill(args, universe: Universe) -> None:
         if store is not None:
             existing = store.read(inst.id, year)
             if existing is not None and len(existing):
+                if year_complete(existing, start, end):
+                    log.info("%s %s: año completo en el almacén; se omite", inst.id, year)
+                    continue
                 skip = set(existing.index.normalize().date)
                 log.info("%s %s: %d días ya en el almacén; solo se piden los que faltan", inst.id, year, len(skip))
         try:
