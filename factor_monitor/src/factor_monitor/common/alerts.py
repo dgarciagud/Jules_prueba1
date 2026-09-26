@@ -24,6 +24,44 @@ ALERT_COLUMNS = [
 ]  # fmt: skip
 
 
+def alert_positions(
+    z: np.ndarray,
+    base: np.ndarray,
+    sessions: np.ndarray,
+    ts_ns: np.ndarray,
+    z_star: float,
+    cooldown_minutes: int = COOLDOWN_MINUTES,
+) -> list[tuple[int, int]]:
+    """Núcleo de las reglas sobre arrays. Devuelve (posición, índice de L) de cada alerta.
+
+    `z`: matriz (velas × longitudes); `base`: condiciones distintas de z ya combinadas.
+    """
+    out = []
+    cooldown = cooldown_minutes * 60 * 1_000_000_000
+    n = len(base)
+    last_t, last_j, prev_sign, crossed, cur_sess = None, 0, 0.0, True, None
+    absz = np.abs(z)
+    for i in range(n):
+        if sessions[i] != cur_sess:
+            cur_sess, last_t, crossed = sessions[i], None, True
+        if last_t is not None and not crossed:
+            zc = z[i, last_j]
+            if zc == zc and np.sign(zc) != prev_sign:  # zc == zc descarta NaN
+                crossed = True
+        if not base[i]:
+            continue
+        if last_t is not None and (not crossed or ts_ns[i] - last_t < cooldown):
+            continue
+        row = absz[i]
+        valid = row >= z_star  # NaN da False
+        if not valid.any():
+            continue
+        j = int(np.nanargmax(np.where(valid, row, -np.inf)))
+        out.append((i, j))
+        last_t, last_j, crossed, prev_sign = ts_ns[i], j, False, np.sign(z[i, j])
+    return out
+
+
 def find_alerts(
     evals: pd.DataFrame,
     target: str,
@@ -40,39 +78,24 @@ def find_alerts(
     """
     if evals.empty or not driver_ok:
         return pd.DataFrame(columns=ALERT_COLUMNS)
+    evals = evals.sort_index()
     blocked = blocked.reindex(evals.index, fill_value=False) if blocked is not None else pd.Series(False, index=evals.index)
     if isinstance(r2_ok, pd.Series):
         r2_mask = evals["session"].map(r2_ok).fillna(False).astype(bool)
     else:
         r2_mask = pd.Series(bool(r2_ok), index=evals.index)
-    base = evals["eligible"].astype(bool) & ~blocked.astype(bool) & r2_mask
-
+    base = (evals["eligible"].astype(bool) & ~blocked.astype(bool) & r2_mask).to_numpy()
+    z = np.column_stack([evals[f"z_{L}"].to_numpy(float) if f"z_{L}" in evals else np.full(len(evals), np.nan) for L in LENGTHS])
+    pos = alert_positions(z, base, evals["session"].to_numpy(), evals.index.as_unit("ns").asi8, z_star, cooldown_minutes)
     rows = []
-    for _, sess in evals.groupby("session", sort=True):
-        last_ts, last_L, crossed = None, None, True
-        prev_sign = None
-        for ts, row in sess.iterrows():
-            if last_ts is not None and not crossed:
-                z_cur = row.get(f"z_{last_L}")
-                if z_cur is not None and np.isfinite(z_cur) and prev_sign is not None and np.sign(z_cur) != prev_sign:
-                    crossed = True
-            if not base.loc[ts]:
-                continue
-            if last_ts is not None:
-                if not crossed or ts - last_ts < pd.Timedelta(minutes=cooldown_minutes):
-                    continue
-            cands = {L: row.get(f"z_{L}") for L in LENGTHS}
-            cands = {L: z for L, z in cands.items() if z is not None and np.isfinite(z) and abs(z) >= z_star}
-            if not cands:
-                continue
-            L = max(cands, key=lambda k: abs(cands[k]))
-            z = float(cands[L])
-            rows.append(
-                {
-                    "ts": ts, "session": row["session"], "target": target, "L": L, "z": z, "z_star": z_star,
-                    "gap": float(row[f"gap_{L}"]), "main_factor": main_factor(row, L, regressors),
-                    "origin": row[f"origin_{L}"], "implied": float(row[f"implied_{L}"]), "real": float(row[f"real_{L}"]),
-                }
-            )  # fmt: skip
-            last_ts, last_L, crossed, prev_sign = ts, L, False, np.sign(z)
+    for i, j in pos:
+        L = LENGTHS[j]
+        row = evals.iloc[i]
+        rows.append(
+            {
+                "ts": evals.index[i], "session": row["session"], "target": target, "L": L, "z": float(z[i, j]),
+                "z_star": z_star, "gap": float(row[f"gap_{L}"]), "main_factor": main_factor(row, L, regressors),
+                "origin": row[f"origin_{L}"], "implied": float(row[f"implied_{L}"]), "real": float(row[f"real_{L}"]),
+            }
+        )  # fmt: skip
     return pd.DataFrame(rows, columns=ALERT_COLUMNS)

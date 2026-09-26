@@ -110,3 +110,17 @@ def test_calibrate_factor():
     raw = pd.DataFrame({"bid_close": node["bid_close"] * 1000}, index=idx)
     ratio, suggested = build_bars.calibrate_factor(node, raw)
     assert ratio == pytest.approx(1000) and suggested == 1000
+
+
+def test_backfill_fails_when_a_year_cannot_be_downloaded(tmp_path, monkeypatch):
+    def fake_download(inst, start, end, engine):
+        if start.year == 2023:
+            raise build_bars.DownloadError("429")
+        return bars(f"{start.year}-01-03 14:30", 3)
+
+    monkeypatch.setattr(build_bars, "download_bars", fake_download)
+    monkeypatch.setattr(build_bars, "yesterday_utc", lambda: __import__("datetime").date(2024, 6, 1))
+    with pytest.raises(SystemExit) as exc:
+        build_bars.main(["backfill", "--instrument", "SPX", "--years", "2023-2024", "--out", str(tmp_path)])
+    assert exc.value.code == 1
+    assert (tmp_path / "SPX_2024.parquet").exists() and not (tmp_path / "SPX_2023.parquet").exists()

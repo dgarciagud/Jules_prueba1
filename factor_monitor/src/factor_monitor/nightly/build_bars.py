@@ -87,6 +87,7 @@ def cmd_backfill(args, universe: Universe) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     runlog = RunLog()
+    failed = []
     for year in range(int(y0), int(y1 or y0) + 1):
         start = date(year, 1, 1)
         end = min(date(year, 12, 31), yesterday_utc())
@@ -96,6 +97,7 @@ def cmd_backfill(args, universe: Universe) -> None:
             bars = download_bars(inst, start, end, args.engine)
         except DownloadError as e:
             runlog.warn(STEP, f"{inst.id} {year}: {e}", instrument=inst.id, year=year)
+            failed.append(year)
             continue
         if bars.empty:
             runlog.warn(STEP, f"{inst.id} {year}: sin datos", instrument=inst.id, year=year)
@@ -104,6 +106,10 @@ def cmd_backfill(args, universe: Universe) -> None:
         log.info("%s %s: %d velas", inst.id, year, len(bars))
     if args.meta:
         runlog.merge_into(Path(args.meta))
+    if failed:
+        # Un año sin descargar deja el trabajo en rojo: nunca un artefacto vacío con éxito.
+        log.error("%s: fallaron los años %s", inst.id, failed)
+        sys.exit(1)
 
 
 def cmd_publish(args, universe: Universe, backend: Backend) -> None:
