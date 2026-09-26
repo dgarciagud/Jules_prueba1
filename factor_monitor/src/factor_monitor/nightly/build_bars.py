@@ -118,13 +118,18 @@ def cmd_publish(args, universe: Universe, backend: Backend) -> None:
     log.info("Publicadas %d claves", len(uploaded))
 
 
-def cmd_incremental(args, universe: Universe, backend: Backend) -> None:
-    runlog = RunLog()
-    store = BarStore(backend, Path(args.cache))
-    until = date.fromisoformat(args.until) if args.until else yesterday_utc()
+def run_incremental(
+    universe: Universe,
+    store: BarStore,
+    until: date,
+    engine: str,
+    runlog: RunLog,
+    instruments: str = "all",
+) -> list[str]:
+    """Descarga incremental de todos los instrumentos. Devuelve los que fallaron."""
     frames: dict[tuple[str, int], pd.DataFrame] = {}
     failed = []
-    for iid, inst in sorted(select_instruments(universe, args.instruments, runlog).items()):
+    for iid, inst in sorted(select_instruments(universe, instruments, runlog).items()):
         last = store.last_timestamp(iid)
         if last is None:
             runlog.warn(STEP, f"{iid}: sin histórico en el almacén; requiere backfill", instrument=iid)
@@ -133,7 +138,7 @@ def cmd_incremental(args, universe: Universe, backend: Backend) -> None:
         if start > until:
             continue
         try:
-            new = download_bars(inst, start, until, args.engine)
+            new = download_bars(inst, start, until, engine)
         except DownloadError as e:
             runlog.warn(STEP, f"{iid}: {e}", instrument=iid)
             failed.append(iid)
@@ -148,8 +153,15 @@ def cmd_incremental(args, universe: Universe, backend: Backend) -> None:
             old = store.read(iid, year)
             frames[(iid, year)] = merge_bars(old, part, replace_from=replace_from)
     store.write(frames)
-    status = "ok" if not failed else "partial"
-    runlog.step(STEP, status, until=until.isoformat(), updated=len(frames), failed=failed)
+    runlog.step(STEP, "ok" if not failed else "partial", until=until.isoformat(), updated=len(frames), failed=failed)
+    return failed
+
+
+def cmd_incremental(args, universe: Universe, backend: Backend) -> None:
+    runlog = RunLog()
+    store = BarStore(backend, Path(args.cache))
+    until = date.fromisoformat(args.until) if args.until else yesterday_utc()
+    failed = run_incremental(universe, store, until, args.engine, runlog, args.instruments)
     if args.meta:
         runlog.merge_into(Path(args.meta))
     if failed and args.strict:
