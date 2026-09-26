@@ -2,120 +2,159 @@
 
 Monitor de drivers y dislocaciones intradía. Especificación: [`../SPEC_v3_monitor_factores.md`](../SPEC_v3_monitor_factores.md).
 
+**No ejecuta operaciones.** Detecta, explica y lleva el historial de cada alerta. Una alerta no es una señal de trading.
+
 ## Estado
 
-| Paso (orden de implementación) | Estado |
+| Paso | Estado |
 |---|---|
 | 1. `common/`: sesiones, festivos, horario de verano, factores, modelos | hecho |
-| 2. Dukascopy, velas de 5 min, almacén en la release, `backfill` | hecho |
+| 2. Dukascopy, velas de 5 min, almacén en la release, `backfill` | hecho (backfill en curso) |
 | 3. Capa diaria, selección y `nightly.yml` | hecho |
-| 4. Capa intradía en `common/` e historial | pendiente |
-| 5. Local: inventario MT5, runner, alertas, consistencia | pendiente |
-| 6. Dashboard Streamlit | pendiente |
+| 4. Capa intradía, alertas, eventos e historial de alertas | hecho |
+| 5. Local: MT5, sincronización, consistencia, runner | hecho (probado con mock de MT5) |
+| 6. Dashboard Streamlit | hecho |
+| Cestas con yfinance/Stooq (pesos, dividendos, ETF) | pendiente |
+| Calendario de eventos (`config/events.csv`) | pendiente de rellenar con fuentes oficiales |
 
-## Estructura actual
+## Arquitectura
+
+```
+GitHub Actions (nocturno, L–V 22:30 UTC)              PC Windows (en vivo)
+  Dukascopy (jetta) → velas 5 min (release)             MT5 Darwinex abierto
+  capa diaria → selección semanal                        runner.py  ── único proceso con MT5
+  historial de alertas → umbrales z*                        cada 5 min: evalúa y registra alertas
+  publica en la rama `results`  ───── git fetch ─────►   app.py (Streamlit) ── solo lee
+```
+
+## Estructura
 
 ```
 factor_monitor/
-├── config/universe.yaml            # objetivos, factores, candidatos, IDs verificados
+├── config/
+│   ├── universe.yaml               # objetivos, factores, IDs Dukascopy/jetta y símbolos MT5
+│   ├── events.csv                  # calendario macro curado (vacío hasta rellenarlo)
+│   └── costs.yaml                  # comisión de Darwinex por objetivo (0 = pendiente)
 ├── src/factor_monitor/
-│   ├── common/
-│   │   ├── sessions.py             # sesiones en hora local → UTC, velas, franjas de 30 min
-│   │   ├── calendars.py            # festivos por bolsa (exchange_calendars)
-│   │   ├── universe.py             # carga y validación de universe.yaml, regla del 20 %
-│   │   ├── factors.py              # retornos, factores con signo, mercado leave-one-out, ortogonalización, cestas
-│   │   ├── models.py               # MCO + HAC, Shapley (LMG), cuotas, ridge con CV por sesiones
-│   │   ├── bars.py                 # M1 bid/ask → velas de 5 min, fusión, informe de calidad
-│   │   └── runlog.py               # avisos y estado de pasos para run_meta.json
-│   ├── sources/dukascopy.py        # dukascopy-node (principal) + lector .bi5 (respaldo)
-│   └── nightly/
-│       ├── store.py                # almacén versionado en assets de la release `data-store`
-│       ├── build_bars.py           # CLI: matrix, backfill, publish, incremental, quality, calibrate
-│       ├── daily_layer.py          # cierres de sesión alineados, MCO móvil 60 sesiones, Shapley, betas
-│       ├── selection.py            # selección semanal (cuota ≥ 15 %, signo estable 4 semanas, máx. 3)
-│       └── run.py                  # pipeline nocturno con aislamiento de fallos por paso
-├── tests/
-├── package.json / package-lock.json  # dukascopy-node fijado
-├── pyproject.toml / requirements-lock.txt
+│   ├── common/                     # compartido por el nocturno y el runner
+│   │   ├── sessions.py, calendars.py, universe.py, factors.py, models.py, bars.py, runlog.py
+│   │   ├── intraday.py             # modelo intradía: ridge, σ por franja, z, descomposición, origen
+│   │   ├── alerts.py               # reglas de alerta y enfriamiento
+│   │   └── events.py               # calendario, regla EIA, ventanas de bloqueo
+│   ├── sources/
+│   │   ├── dukascopy.py            # cliente jetta con ritmo fijo (+ dukascopy-node y .bi5)
+│   │   └── mt5.py                  # MetaTrader5: inventario, hora del servidor, velas en UTC
+│   ├── nightly/
+│   │   ├── store.py, build_bars.py # almacén en la release y descargas
+│   │   ├── daily_layer.py, selection.py
+│   │   ├── track_record.py         # historial de alertas sin look-ahead y umbrales z*
+│   │   └── run.py                  # pipeline nocturno
+│   └── live/
+│       ├── sync_results.py, consistency.py, engine.py, alerts.py, runner.py
+│       ├── dashboard_data.py       # preparación de datos del dashboard (con tests)
+│       └── app.py                  # dashboard Streamlit
+├── scripts/
+│   ├── inventario_mt5.py           # inventario de símbolos de Darwinex (solo lectura)
+│   └── demo_dashboard.py           # escenario sintético para ver el dashboard sin MT5
+└── tests/                          # 90+ tests, con mock de MT5
 ```
 
-Los workflows están en la raíz del repositorio (`.github/workflows/factor-monitor-*.yml`), porque GitHub solo los lee ahí.
+Los workflows están en la raíz del repositorio (`.github/workflows/factor-monitor-*.yml`).
 
 ## Convenciones
 
-- **Velas**: la marca es la **apertura** de la vela, en **UTC**. Una vela cubre `[marca, marca + 5 min)`.
-- **Sesiones**: Europa 09:00–17:30 hora de París; EE.UU. 09:30–16:00 hora de Nueva York. La conversión a UTC usa `zoneinfo`, así que las semanas en que EE.UU. y la UE no han cambiado de hora a la vez salen bien.
-- **Mid** = (bid + ask) / 2 de cada campo OHLC; `spread` = spread medio de cierre de los minutos de la vela; `n` = minutos con dato. Se descartan los minutos con ask <= bid.
+- **Velas**: marca = **apertura**, en **UTC**; cubre `[marca, marca + 5 min)`.
+- **Sesiones**: Europa 09:00–17:30 hora de París; EE.UU. 09:30–16:00 hora de Nueva York, con `zoneinfo`.
+- **Precio**: histórico de Dukascopy descargado solo con **bid** (desde 2019); el nocturno incremental descarga bid y ask. Los costes de alertas antiguas son solo la comisión.
 
-## Fuentes de Dukascopy
+## Datos de Dukascopy
 
-`dukascopy-node` 1.50.0 descarga de `jetta.dukascopy.com` (JSON). El lector `.bi5` de respaldo usa `datafeed.dukascopy.com` (velas diarias de minutos, LZMA, registros `>5i1f`), así que el respaldo es una fuente independiente. Si `dukascopy-node` falla, se usa automáticamente el `.bi5`.
+- Motor por defecto: cliente propio del API JSON `jetta.dukascopy.com`, una petición cada 10 s. Dukascopy limita a unas 3–6 peticiones por minuto por IP y algunos runners de GitHub llegan ya bloqueados: tras ~7 min de 429 el trabajo falla para que al relanzarlo toque otro runner.
+- `backfill --resume` solo pide los días que no estén en el almacén y omite los años completos. **Relanzar el workflow completa los huecos.**
+- Historia limitada: T-Bond desde dic-2018; Intesa, UniCredit y Eni desde dic-2020; OMV no existe en Dukascopy.
 
-Los IDs de `universe.yaml` están verificados contra los metadatos de `dukascopy-node`. Limitaciones de historia:
+## Darwinex (MT5)
 
-| Instrumento | Minutos desde |
-|---|---|
-| Bund | mayo 2016 |
-| T-Bond | diciembre 2018 |
-| Intesa, UniCredit, Eni | diciembre 2020 |
-| OMV | no existe en Dukascopy (entrará solo con yfinance, en la capa diaria) |
+| Instrumento | Símbolo | Nota |
+|---|---|---|
+| S&P 500 / Nasdaq 100 | `SP500` / `NDX` | |
+| Euro Stoxx 50 / DAX / CAC / IBEX | `STOXX50E` / `GDAXI` / `FCHI40` / `SPA35` | |
+| EUR/USD | `EURUSD` | |
+| Brent | `XTIUSD` | sustituto en vivo (WTI) |
+| T-Bond | `TLT` | sustituto en vivo (ETF), solo horario de EE.UU. |
+| Bund, acciones europeas | — | solo capa diaria |
 
-**Pendiente antes de usar el `.bi5` como respaldo**: calibrar `point_factor` por instrumento (valores actuales estimados):
+Servidor Darwinex: UTC+3 (verano de EE.UU.) / UTC+2 (invierno). El runner lo detecta solo: con tick reciente, o con el mercado cerrado a partir del cierre del forex del viernes (17:00 NY).
 
-```bash
-python -m factor_monitor.nightly.build_bars calibrate --instrument SPX --day 2025-06-03
+## Instalación en el PC (Windows)
+
+Requisitos: Python 3.11+, Git y MetaTrader 5 de Darwinex con la sesión iniciada.
+
+```powershell
+git clone https://github.com/dgarciagud/Jules_prueba1.git
+cd Jules_prueba1\factor_monitor
+py -3.11 -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements-lock.txt
+pip install -e .[live]
 ```
 
-Devuelve el factor sugerido y termina con código 1 si no coincide con el configurado.
+Arranque (dos ventanas de PowerShell, ambas con el entorno activado y en `factor_monitor`):
 
-## Almacén de velas
+```powershell
+# 1) Runner: sincroniza resultados, inventario MT5, hora del servidor y cálculo cada 5 min
+python -m factor_monitor.live.runner --repo .. --results results_local --state state --notify
 
-Assets de la release `data-store`, un parquet por instrumento y año con nombre versionado (`SPX_2024.<fecha>-<hash>.parquet`) y un `manifest.json`. Orden de escritura: subir ficheros nuevos → subir manifiesto → borrar versiones antiguas. Un fallo a mitad deja el manifiesto anterior válido; si se pierde el manifiesto, se reconstruye con la versión más reciente de cada clave.
+# 2) Dashboard (se abre en el navegador; se refresca cada 60 s)
+streamlit run src\factor_monitor\live\app.py -- --results results_local --state state
+```
+
+- `--notify` activa las notificaciones de escritorio de Windows.
+- Opcional: una tarea programada de Windows que lance el runner a las 08:45 los días laborables.
+
+### Ver el dashboard sin MT5 (demo)
+
+```powershell
+python scripts\demo_dashboard.py demo
+$env:FM_RESULTS="demo\results"; $env:FM_STATE="demo\state"; $env:FM_UNIVERSE="demo\universe.yaml"
+streamlit run src\factor_monitor\live\app.py
+```
+
+## Dashboard
+
+| Pestaña | Contenido |
+|---|---|
+| Régimen | Heatmap de cuotas Shapley (sin el mercado), R² y regresores de la semana, evolución del R² por factor |
+| Monitor | Tabla ordenada por \|z\|/z*: z, z*, gap, factor principal, origen, estado (ALERTA / vigilando / filtrado), historial de la celda, disponibilidad en MT5; alertas de hoy |
+| Detalle | Real frente a implícito desde la apertura, z con bandas ±z*, descomposición del implícito por factor (ortogonalizados respecto al mercado), eventos del día |
+| Estado del sistema | Nocturno (pasos, avisos, fin de datos), runner (hora del servidor, exclusiones, errores), consistencia Dukascopy–MT5, inventario MT5 |
+
+Colores: un color fijo por factor (paleta validada para daltonismo en modo claro y oscuro); cada gráfico tiene tooltips y su tabla.
 
 ## Pipeline nocturno
-
-`factor-monitor nightly` corre de lunes a viernes a las 22:30 UTC (y a mano con *Run workflow*). Pasos:
 
 | Paso | Qué hace | Salida en la rama `results` |
 |---|---|---|
 | `bars` | incremental de Dukascopy (días nuevos + 3 días hábiles) | assets de la release |
-| `daily` | capa diaria; recalcula solo las fechas nuevas + 3 días hábiles | `shapley.parquet`, `daily_r2.parquet` |
-| `selection` | solo con datos del último día hábil de la semana (o la primera vez) | `selection.json`, `selection_history.parquet` |
-| `recent_bars` | últimas 15 sesiones hábiles de velas de 5 min | `recent_bars.parquet` |
-| — | estado, fin de datos, versión, avisos, último éxito por paso | `run_meta.json` |
+| `daily` | capa diaria (solo fechas nuevas + 3 días) | `shapley.parquet`, `daily_r2.parquet` |
+| `selection` | selección semanal; en la ejecución completa reconstruye todas las semanas pasadas | `selection.json`, `selection_history.parquet` |
+| `track_record` | historial de alertas; completo el primer día hábil del mes, incremental el resto | `track_record_alerts.parquet`, `track_record.parquet`, `intraday_r2.parquet`, `thresholds.json` |
+| `recent_bars` | últimas 15 sesiones de velas de 5 min | `recent_bars.parquet` |
+| — | estado, fin de datos, versión, avisos | `run_meta.json` |
 
-Si un paso falla, sus ficheros anteriores no se tocan, el error queda en `run_meta.json` y el job termina en rojo (GitHub avisa por email) después de publicar lo demás.
+Si un paso falla, sus ficheros anteriores no se tocan y el job termina en rojo.
 
-Detalles de la capa diaria:
-- El cierre de cada día es la última vela de 5 min de la sesión del objetivo; todos los instrumentos se miden en esa misma marca (tolerancia de 30 min).
-- Solo se usan fechas hábiles en la bolsa del objetivo. Un miembro del mercado leave-one-out en festivo queda fuera de la media ese día.
-- Los candidatos se ortogonalizan respecto al mercado en cada ventana. La cuota Shapley es sobre el R² sin el mercado.
-- Las cestas usan pesos iguales hasta que esté el paso de yfinance. Un día con menos del 80 % del peso disponible queda en NaN, así que BANKS y ENERGY solo tienen historia desde diciembre de 2020 (Intesa, UniCredit y Eni). OMV aún no tiene datos.
-
-## Uso
-
-### GitHub Actions
+## GitHub Actions
 
 1. **Tests** (`factor-monitor tests`): en cada push que toque `factor_monitor/`.
-2. **Carga histórica** (`factor-monitor backfill`): Actions → *factor-monitor backfill* → *Run workflow*. Parámetros: instrumentos (`all` o lista), primer año, último año y motor (`node` o `bi5`). Crea la release `data-store` si no existe y deja `data_quality.csv` como artefacto.
+2. **Carga histórica** (`factor-monitor backfill`): instrumentos, años, motor (`jetta`), ritmo (`pace`, 10 s), lados (`bid` o `bid,ask`) y paralelismo (4). Relanzarlo completa lo que falte.
+3. **Nocturno** (`factor-monitor nightly`): automático L–V 22:30 UTC; la primera vez, a mano con `full=true`, `force_selection=true` y `years=8`.
 
-El workflow necesita `contents: write` (ya declarado) y no usa más secretos que el `GITHUB_TOKEN` automático.
-
-### Local (desarrollo)
+## Desarrollo
 
 ```bash
 cd factor_monitor
-python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-lock.txt && pip install --no-deps -e .
-npm ci                                                  # solo si se va a descargar con dukascopy-node
 pytest
-```
-
-Almacén local en lugar de la release (útil para pruebas):
-
-```bash
-python -m factor_monitor.nightly.build_bars backfill --instrument SPX --years 2024 --out out
-python -m factor_monitor.nightly.build_bars publish --src out --store-dir .cache/remote
-python -m factor_monitor.nightly.build_bars incremental --store-dir .cache/remote
-python -m factor_monitor.nightly.build_bars quality --store-dir .cache/remote
 ```

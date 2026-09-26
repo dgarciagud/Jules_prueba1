@@ -38,7 +38,7 @@ from ..common.runlog import RunLog
 from ..common.universe import Universe, load_universe
 from .build_bars import add_download_opts, options_from, run_incremental, yesterday_utc
 from .daily_layer import merge_history, run_daily_layer
-from .selection import is_week_end, run_selection
+from .selection import backfill_history, is_week_end, run_selection
 from .track_record import aggregate, run_track_record
 from .store import BarStore, GhReleaseBackend, LocalBackend
 
@@ -98,11 +98,18 @@ def step_daily(results: Path, store: BarStore, universe: Universe, runlog: RunLo
     runlog.step("daily", "ok", since=None if since is None else since.date().isoformat(), rows=len(res.r2))
 
 
-def step_selection(results: Path, universe: Universe, runlog: RunLog, force: bool) -> None:
+def step_selection(results: Path, universe: Universe, runlog: RunLog, force: bool, full: bool = False) -> None:
     factors, r2 = read_parquet(results / "shapley.parquet"), read_parquet(results / "daily_r2.parquet")
     if factors is None or r2 is None or r2.empty:
         raise RuntimeError("Sin resultados de la capa diaria")
     data_end = pd.Timestamp(r2["date"].max()).date()
+    hist_path = results / "selection_history.parquet"
+    if full or not hist_path.exists():
+        # Primera ejecución o recálculo completo: selecciones de todas las semanas pasadas.
+        past = backfill_history(factors, universe)
+        if not past.empty:
+            write_parquet(past, hist_path)
+            runlog.step("selection_history", "ok", weeks=int(past["as_of"].nunique()))
     sel_path = results / "selection.json"
     current = json.loads(sel_path.read_text(encoding="utf-8")) if sel_path.exists() else None
     if current is not None and current.get("as_of") == data_end.isoformat() and not force:
@@ -113,7 +120,6 @@ def step_selection(results: Path, universe: Universe, runlog: RunLog, force: boo
         return
     sel, rows = run_selection(factors, universe, data_end)
     write_json(sel, sel_path)
-    hist_path = results / "selection_history.parquet"
     write_parquet(merge_history(read_parquet(hist_path), rows, ["as_of", "target", "factor"]), hist_path)
     none = [t for t, v in sel["targets"].items() if v["status"] != "ok"]
     runlog.step("selection", "ok", as_of=sel["as_of"], valid_from=sel["valid_from"], without_driver=none)
@@ -230,7 +236,7 @@ def run(args, universe: Universe, store: BarStore | None) -> int:
         if runlog.steps.get("bars", {}).get("failed"):
             ok = False  # fallo parcial: se sigue con lo disponible, pero el job debe avisar
     ok &= run_step("daily", lambda: step_daily(results, store, universe, runlog, args.years, args.full), runlog)
-    ok &= run_step("selection", lambda: step_selection(results, universe, runlog, args.force_selection), runlog)
+    ok &= run_step("selection", lambda: step_selection(results, universe, runlog, args.force_selection, args.full), runlog)
     universe_path = getattr(args, "universe", None)
     config_dir = Path(universe_path).parent if universe_path else Path(__file__).resolve().parents[3] / "config"
     ok &= run_step("track_record", lambda: step_track_record(results, store, universe, runlog, args.full, config_dir), runlog)

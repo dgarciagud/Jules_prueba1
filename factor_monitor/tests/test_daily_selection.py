@@ -182,3 +182,18 @@ def test_pipeline_writes_and_isolates_failures(tmp_path, bars, universe, monkeyp
     assert meta2["steps"]["daily"]["status"] == "failed" and "fallo simulado" in meta2["steps"]["daily"]["error"]
     assert meta2["last_success"]["daily"] == meta["steps"]["daily"]["at"]
     assert meta2["steps"]["selection"]["status"] == "skipped"  # ya calculada con estos datos
+
+
+def test_backfill_history_is_point_in_time(bars, universe):
+    from factor_monitor.nightly.selection import backfill_history
+
+    res = run_daily_layer(bars, universe, RunLog())
+    hist = backfill_history(res.factors, universe)
+    weeks = sorted(hist["as_of"].unique())
+    assert len(weeks) >= 8 and pd.Timestamp("2024-03-28") in weeks   # jueves antes de Viernes Santo
+    # Cada semana solo usa estimaciones hasta su fecha: recalcular con datos truncados da lo mismo.
+    cut = pd.Timestamp("2024-05-10")
+    truncated = backfill_history(res.factors[res.factors["date"] <= cut], universe)
+    a = hist[hist["as_of"] <= cut].sort_values(["as_of", "target", "factor"]).reset_index(drop=True)
+    b = truncated.sort_values(["as_of", "target", "factor"]).reset_index(drop=True)
+    pd.testing.assert_frame_equal(a, b)

@@ -102,3 +102,15 @@ def run_selection(factors: pd.DataFrame, universe: Universe, as_of: date) -> tup
                 }
             )
     return out, pd.DataFrame(rows)
+
+
+def backfill_history(factors: pd.DataFrame, universe: Universe) -> pd.DataFrame:
+    """Selecciones semanales pasadas, cada una con los datos disponibles en su fecha.
+
+    Hace falta en la primera ejecución completa: el historial de alertas usa la
+    selección vigente en cada sesión, no la de hoy.
+    """
+    dates = sorted(pd.to_datetime(factors["date"]).dt.date.unique())
+    rows = [run_selection(factors, universe, d)[1] for d in dates if is_week_end(d)]
+    rows = [r for r in rows if not r.empty]
+    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
