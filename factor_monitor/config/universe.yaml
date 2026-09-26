@@ -6,8 +6,12 @@
 # `dukascopy_code` es el código del API jetta (motor por defecto).
 # `point_factor` solo lo usa el lector .bi5 de respaldo (precio = entero / factor);
 # es una estimación y debe calibrarse con `build_bars calibrate` antes de usarlo.
-# mt5_symbol: inventario de Darwinex (servidor Darwinex-Demo, 26-sep-2026). Sin símbolo en
-# Darwinex: CAC (pendiente de confirmar), Brent, Bund, T-Bond y todas las acciones europeas.
+# mt5_symbol: inventario de Darwinex (servidor Darwinex-Demo, UTC+3/UTC+2, 26-sep-2026).
+# Sustitutos en vivo (el historial usa el instrumento de Dukascopy; el test de
+# consistencia §3.5 mide cuánto se parecen y marca "no comparable" si baja de 0,90):
+#   BRENT → XTIUSD (WTI contado; Darwinex no tiene Brent)
+#   TBOND → TLT (ETF de bonos del Tesoro a +20 años; solo cotiza en horario de EE.UU.)
+# Sin símbolo en Darwinex: Bund y todas las acciones europeas.
 
 overlap_threshold: 0.20        # §5.3: exclusión de factores que contienen al objetivo
 
@@ -16,14 +20,14 @@ instruments:
   SPX:   {kind: target, dukascopy_id: usa500idxusd, dukascopy_code: USA500.IDX-USD,  mt5_symbol: SP500, session: us, exchange: XNYS, point_factor: 1000}
   SX5E:  {kind: target, dukascopy_id: eusidxeur, dukascopy_code: EUS.IDX-EUR,     mt5_symbol: STOXX50E, session: eu, exchange: XETR, point_factor: 1000}
   DAX:   {kind: target, dukascopy_id: deuidxeur, dukascopy_code: DEU.IDX-EUR,     mt5_symbol: GDAXI, session: eu, exchange: XETR, point_factor: 1000}
-  CAC:   {kind: target, dukascopy_id: fraidxeur, dukascopy_code: FRA.IDX-EUR,     mt5_symbol: null, session: eu, exchange: XPAR, point_factor: 1000}
+  CAC:   {kind: target, dukascopy_id: fraidxeur, dukascopy_code: FRA.IDX-EUR,     mt5_symbol: FCHI40, session: eu, exchange: XPAR, point_factor: 1000}
   IBEX:  {kind: target, dukascopy_id: espidxeur, dukascopy_code: ESP.IDX-EUR,     mt5_symbol: SPA35, session: eu, exchange: XMAD, point_factor: 1000}
 
   # --- Instrumentos de los factores ------------------------------------------
   NDX:    {kind: factor, dukascopy_id: usatechidxusd, dukascopy_code: USATECH.IDX-USD, mt5_symbol: NDX, session: us, exchange: XNYS, point_factor: 1000}
-  BRENT:  {kind: factor, dukascopy_id: brentcmdusd, dukascopy_code: BRENT.CMD-USD,   mt5_symbol: null, point_factor: 1000}
+  BRENT:  {kind: factor, dukascopy_id: brentcmdusd, dukascopy_code: BRENT.CMD-USD,   mt5_symbol: XTIUSD, point_factor: 1000}
   BUND:   {kind: factor, dukascopy_id: bundtreur, dukascopy_code: BUND.TR-EUR,     mt5_symbol: null, point_factor: 1000}   # desde may-2016
-  TBOND:  {kind: factor, dukascopy_id: ustbondtrusd, dukascopy_code: USTBOND.TR-USD,  mt5_symbol: null, point_factor: 1000}   # desde dic-2018
+  TBOND:  {kind: factor, dukascopy_id: ustbondtrusd, dukascopy_code: USTBOND.TR-USD,  mt5_symbol: TLT, point_factor: 1000}   # desde dic-2018
   EURUSD: {kind: factor, dukascopy_id: eurusd, dukascopy_code: EUR-USD,        mt5_symbol: EURUSD, point_factor: 100000}
 
   # --- Componentes de las cestas sectoriales (§4.2) ---------------------------
