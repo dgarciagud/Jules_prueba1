@@ -160,10 +160,14 @@ def test_pipeline_writes_and_isolates_failures(tmp_path, bars, universe, monkeyp
 
     assert nightly.run(make_args(tmp_path), universe, store) == 0
     res = tmp_path / "results"
-    for f in ("shapley.parquet", "daily_r2.parquet", "selection.json", "selection_history.parquet", "recent_bars.parquet", "run_meta.json"):
+    for f in ("shapley.parquet", "daily_r2.parquet", "selection.json", "selection_history.parquet", "recent_bars.parquet",
+              "run_meta.json", "thresholds.json", "intraday_r2.parquet", "track_record_alerts.parquet"):
         assert (res / f).exists(), f
     meta = json.loads((res / "run_meta.json").read_text())
     assert meta["data_end"] == "2024-06-28" and meta["steps"]["daily"]["status"] == "ok"
+    assert meta["steps"]["track_record"]["status"] == "ok", meta["steps"]["track_record"]
+    thr = json.loads((res / "thresholds.json").read_text())
+    assert set(thr["targets"]) == {"DAX", "SPX"}
     before = (res / "shapley.parquet").read_bytes()
     recent = pd.read_parquet(res / "recent_bars.parquet")
     assert set(recent["instrument"]) == set(bars) and recent["ts"].min() >= pd.Timestamp("2024-06-07", tz="UTC")

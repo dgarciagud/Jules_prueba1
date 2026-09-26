@@ -10,6 +10,10 @@ Ficheros en --results-dir (rama `results`):
   daily_r2.parquet           date, target, r2, nobs
   selection.json             selección vigente
   selection_history.parquet  todas las selecciones semanales (para el historial sin look-ahead)
+  track_record_alerts.parquet  alertas históricas con sus resultados
+  track_record.parquet       métricas por celda (jerárquicas, con estabilidad por año)
+  intraday_r2.parquet        R² intradía por sesión y objetivo
+  thresholds.json            z* y mediana de R² vigentes por objetivo (los usa el monitor en vivo)
   recent_bars.parquet        últimas sesiones de velas de 5 min (test de consistencia local)
   run_meta.json              estado de cada paso, fecha de fin de datos, versión y avisos
 """
@@ -27,19 +31,22 @@ from pathlib import Path
 from typing import Callable
 
 import pandas as pd
+import yaml
 
+from ..common.events import eia_events, load_events, validate
 from ..common.runlog import RunLog
 from ..common.universe import Universe, load_universe
 from .build_bars import add_download_opts, options_from, run_incremental, yesterday_utc
 from .daily_layer import merge_history, run_daily_layer
 from .selection import is_week_end, run_selection
+from .track_record import aggregate, run_track_record
 from .store import BarStore, GhReleaseBackend, LocalBackend
 
 log = logging.getLogger(__name__)
 
 RECOMPUTE_BUSINESS_DAYS = 3
 RECENT_BUSINESS_DAYS = 15
-STEPS = ("bars", "daily", "selection", "recent_bars")
+STEPS = ("bars", "daily", "selection", "track_record", "recent_bars")
 
 
 # ---------------------------------------------------------------------------- E/S
@@ -112,6 +119,57 @@ def step_selection(results: Path, universe: Universe, runlog: RunLog, force: boo
     runlog.step("selection", "ok", as_of=sel["as_of"], valid_from=sel["valid_from"], without_driver=none)
 
 
+def load_commissions(path: Path) -> dict[str, float]:
+    if not path.exists():
+        return {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return {k: float(v or 0.0) for k, v in (raw.get("commission_bps") or {}).items()}
+
+
+def is_first_business_day_of_month(day: date) -> bool:
+    first = pd.Timestamp(day).replace(day=1)
+    return pd.Timestamp(day) == (first if first.weekday() < 5 else first + pd.offsets.BDay(1))
+
+
+def step_track_record(results: Path, store: BarStore, universe: Universe, runlog: RunLog, full: bool, config_dir: Path) -> None:
+    hist = read_parquet(results / "selection_history.parquet")
+    if hist is None or hist.empty:
+        raise RuntimeError("Sin historial de selecciones")
+    alerts_path, r2_path, thr_path = results / "track_record_alerts.parquet", results / "intraday_r2.parquet", results / "thresholds.json"
+    old_alerts, old_r2 = read_parquet(alerts_path), read_parquet(r2_path)
+    old_thr = json.loads(thr_path.read_text(encoding="utf-8")) if thr_path.exists() else None
+    today = yesterday_utc() + pd.Timedelta(days=1)
+    full = full or old_r2 is None or old_thr is None or is_first_business_day_of_month(today)
+
+    keys = store.keys()
+    years = sorted({y for _, y in keys})
+    if not full:
+        years = [y for y in years if y >= today.year - 1]
+    bars = load_bars(store, sorted(universe.downloadable()), years)
+    if not bars:
+        raise RuntimeError("El almacén no tiene velas")
+    start = min(df.index.min() for df in bars.values()).date()
+    events = load_events(config_dir / "events.csv")
+    events = pd.concat([events, eia_events(start, today)], ignore_index=True) if not events.empty else eia_events(start, today)
+    for w in validate(load_events(config_dir / "events.csv"), start, today):
+        runlog.warn("track_record", w)
+    comm = load_commissions(config_dir / "costs.yaml")
+
+    since = None
+    if not full:
+        since = pd.Timestamp(old_r2["session"].max()) + pd.Timedelta(days=1)
+    res = run_track_record(bars, universe, hist, events, runlog, comm, since=since, prior_r2=None if full else old_r2, prior_thresholds=old_thr)
+    alerts = res.alerts if full else merge_history(old_alerts, res.alerts, ["ts", "target"])
+    r2 = res.intraday_r2 if full else merge_history(old_r2, res.intraday_r2, ["session", "target"])
+    write_parquet(alerts, alerts_path)
+    write_parquet(r2, r2_path)
+    agg = aggregate(alerts)
+    if not agg.empty:
+        write_parquet(agg, results / "track_record.parquet")
+    write_json({**res.thresholds, "computed": "full" if full else "incremental"}, thr_path)
+    runlog.step("track_record", "ok", mode="full" if full else "incremental", alerts=len(alerts))
+
+
 def step_recent_bars(results: Path, store: BarStore, universe: Universe, runlog: RunLog) -> None:
     end = yesterday_utc()
     start = (pd.Timestamp(end) - pd.offsets.BDay(RECENT_BUSINESS_DAYS)).tz_localize("UTC")
@@ -173,6 +231,9 @@ def run(args, universe: Universe, store: BarStore | None) -> int:
             ok = False  # fallo parcial: se sigue con lo disponible, pero el job debe avisar
     ok &= run_step("daily", lambda: step_daily(results, store, universe, runlog, args.years, args.full), runlog)
     ok &= run_step("selection", lambda: step_selection(results, universe, runlog, args.force_selection), runlog)
+    universe_path = getattr(args, "universe", None)
+    config_dir = Path(universe_path).parent if universe_path else Path(__file__).resolve().parents[3] / "config"
+    ok &= run_step("track_record", lambda: step_track_record(results, store, universe, runlog, args.full, config_dir), runlog)
     ok &= run_step("recent_bars", lambda: step_recent_bars(results, store, universe, runlog), runlog)
     meta = write_run_meta(results, runlog)
     log.info("Fin de datos: %s; pasos: %s", meta["data_end"], {k: v["status"] for k, v in meta["steps"].items()})

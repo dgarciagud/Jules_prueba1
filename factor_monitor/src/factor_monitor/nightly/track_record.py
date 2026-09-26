@@ -301,7 +301,8 @@ def run_track_record(
         all_r2.append(r2)
         r2_hist = pd.concat([prior if prior is not None else pd.Series(dtype=float), r2.set_index("session")["r2"] if not r2.empty else pd.Series(dtype=float)])
         r2_hist = r2_hist[~r2_hist.index.duplicated(keep="last")].sort_index()
-        entry = {"r2_median": float(r2_hist.tail(LOOKBACK_SESSIONS).median()) if len(r2_hist) else None}
+        # Igual que el filtro del historial: sin 20 sesiones previas no hay mediana (no se alerta).
+        entry = {"r2_median": float(r2_hist.tail(LOOKBACK_SESSIONS).median()) if len(r2_hist) >= MIN_HISTORY_SESSIONS else None}
         entry["z_star"] = z_current if z_current is not None else (z_fixed if z_fixed is not None else Z_DEFAULT)
         entry["sessions"] = int(len(r2_hist))
         thresholds[tid] = entry

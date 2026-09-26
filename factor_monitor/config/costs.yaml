@@ -1,0 +1,11 @@
+# Coste de ida y vuelta en Darwinex, en puntos básicos, por objetivo (SPEC v3 §9).
+# El spread lo aporta el histórico de velas; aquí va la comisión.
+# 0 = pendiente de rellenar con las condiciones reales de la cuenta (no se inventa).
+commission_bps:
+  SPX: 0
+  SX5E: 0
+  DAX: 0
+  CAC: 0
+  IBEX: 0
+  BANKS: 0
+  ENERGY: 0

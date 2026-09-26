@@ -17,7 +17,12 @@ dependencies = [
 
 [project.optional-dependencies]
 nightly = []
-live = []
+# Parte local (Windows). El lockfile de esta parte se genera en el PC con `pip freeze`.
+live = [
+    "MetaTrader5>=5.0.45; sys_platform == 'win32'",
+    "streamlit>=1.30",
+    "plyer>=2.1",
+]
 dev = ["pytest==9.1.1"]
 
 [tool.setuptools.packages.find]
