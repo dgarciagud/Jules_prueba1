@@ -71,7 +71,7 @@ def build_matrix(instruments: list[str], start_year: int, end_year: int) -> list
 @dataclass
 class DownloadOptions:
     engine: str = "jetta"
-    pace: float = 20.0
+    pace: float = 10.0
     sides: tuple[str, ...] = ("bid", "ask")
     _pacer: Pacer | None = None
 
@@ -109,13 +109,14 @@ def cmd_backfill(args, universe: Universe) -> None:
     out.mkdir(parents=True, exist_ok=True)
     runlog = RunLog()
     failed = []
+    opts = options_from(args)
     for year in range(int(y0), int(y1 or y0) + 1):
         start = date(year, 1, 1)
         end = min(date(year, 12, 31), yesterday_utc())
         if start > end:
             continue
         try:
-            bars = download_bars(inst, start, end, options_from(args))
+            bars = download_bars(inst, start, end, opts)
         except DownloadError as e:
             runlog.warn(STEP, f"{inst.id} {year}: {e}", instrument=inst.id, year=year)
             failed.append(year)
@@ -125,6 +126,9 @@ def cmd_backfill(args, universe: Universe) -> None:
             continue
         bars.to_parquet(out / f"{inst.id}_{year}.parquet")
         log.info("%s %s: %d velas", inst.id, year, len(bars))
+    if opts.engine == "jetta":
+        log.info("Peticiones: %d; límites (429): %d", opts.pacer.requests, opts.pacer.rate_limited)
+        runlog.step(STEP, "ok" if not failed else "failed", requests=opts.pacer.requests, rate_limited=opts.pacer.rate_limited)
     if args.meta:
         runlog.merge_into(Path(args.meta))
     if failed:
@@ -236,12 +240,12 @@ def cmd_quality(args, universe: Universe, backend: Backend) -> None:
 
 def options_from(args) -> DownloadOptions:
     sides = tuple(x.strip() for x in getattr(args, "sides", "bid,ask").split(",") if x.strip())
-    return DownloadOptions(engine=args.engine, pace=getattr(args, "pace", 20.0), sides=sides)
+    return DownloadOptions(engine=args.engine, pace=getattr(args, "pace", 10.0), sides=sides)
 
 
 def add_download_opts(sp) -> None:
     sp.add_argument("--engine", choices=["jetta", "node", "bi5"], default="jetta")
-    sp.add_argument("--pace", type=float, default=20.0, help="Segundos mínimos entre peticiones (motor jetta)")
+    sp.add_argument("--pace", type=float, default=10.0, help="Segundos mínimos entre peticiones (motor jetta)")
     sp.add_argument("--sides", default="bid,ask", help="'bid,ask' o 'bid' (la mitad de peticiones, sin spread)")
 
 

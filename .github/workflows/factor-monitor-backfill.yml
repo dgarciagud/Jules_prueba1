@@ -23,10 +23,13 @@ on:
         default: jetta
       pace:
         description: "Segundos entre peticiones por trabajo (Dukascopy limita por IP)"
-        default: "20"
+        default: "10"
       sides:
         description: "'bid,ask' o 'bid' (la mitad de peticiones, sin spread)"
         default: "bid,ask"
+      parallel:
+        description: "Trabajos en paralelo (cada runner tiene su IP)"
+        default: "6"
 
 concurrency:
   group: factor-monitor-data-store
@@ -68,7 +71,7 @@ jobs:
     timeout-minutes: 350
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: ${{ fromJSON(inputs.parallel) }}
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4

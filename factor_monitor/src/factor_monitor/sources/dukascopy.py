@@ -3,8 +3,8 @@
 Motores:
   - `jetta` (por defecto): cliente propio del API JSON `jetta.dukascopy.com`, con
     ritmo fijo entre peticiones. Dukascopy limita a unas 3 peticiones por minuto
-    por IP (medido: 1 petición cada 20 s → 43 de 45 correctas; ráfagas → 429 casi
-    inmediato), así que el ritmo lo marca `Pacer`.
+    por IP (medido: 1 petición cada 20 s → 43/45 correctas; cada 10 s → 79/80; en
+    ráfagas → 429 casi inmediato), así que el ritmo lo marca `Pacer` (10 s por defecto).
   - `node`: `dukascopy-node` vía subprocess (mismo API, pero en ráfagas).
   - `bi5`: lector propio de los ficheros diarios `.bi5` de `datafeed.dukascopy.com`.
 """
@@ -47,7 +47,7 @@ class Pacer:
 
     def __init__(
         self,
-        interval: float = 20.0,
+        interval: float = 10.0,
         rate_limit_pause: float = 60.0,
         max_rate_limit_retries: int = 8,
         sleep: Callable[[float], None] = _time.sleep,
