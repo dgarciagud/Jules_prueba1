@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import lzma
+import os
 import subprocess
 import tempfile
 import time as _time
@@ -68,9 +69,22 @@ def parse_candles_bi5(raw: bytes, day: date, point_factor: float) -> pd.DataFram
     return df[df["volume"] > 0]
 
 
-def http_get(url: str, retries: int = 5, pause: float = 1.0, timeout: float = 30.0) -> bytes:
-    """GET con backoff exponencial. Un 404 es un día sin datos (bytes vacíos)."""
+def http_get(
+    url: str,
+    retries: int = 6,
+    pause: float = 2.0,
+    timeout: float = 30.0,
+    rate_limit_pause: float = 15.0,
+    max_wait: float = 300.0,
+    sleep: Callable[[float], None] = _time.sleep,
+) -> bytes:
+    """GET con backoff exponencial. Un 404 es un día sin datos (bytes vacíos).
+
+    Ante un 429/503 (límite de peticiones de Dukascopy) la espera parte de
+    `rate_limit_pause` y respeta `Retry-After` si viene en la respuesta.
+    """
     for attempt in range(retries):
+        wait = min(pause * 2**attempt, max_wait)
         try:
             with urllib.request.urlopen(url, timeout=timeout) as resp:
                 return resp.read()
@@ -78,12 +92,16 @@ def http_get(url: str, retries: int = 5, pause: float = 1.0, timeout: float = 30
             if e.code == 404:
                 return b""
             err: Exception = e
+            if e.code in (429, 503):
+                retry_after = e.headers.get("Retry-After") if e.headers else None
+                base = float(retry_after) if retry_after and retry_after.isdigit() else rate_limit_pause * 2**attempt
+                wait = min(base, max_wait)
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             err = e
-        wait = pause * 2**attempt
-        log.warning("Fallo al descargar %s (%s); reintento en %.0f s", url, err, wait)
-        _time.sleep(wait)
-    raise DownloadError(f"No se pudo descargar {url} tras {retries} intentos")
+        if attempt < retries - 1:
+            log.warning("Fallo al descargar %s (%s); reintento en %.0f s", url, err, wait)
+            sleep(wait)
+    raise DownloadError(f"No se pudo descargar {url} tras {retries} intentos ({err})")
 
 
 def fetch_m1_bi5(
@@ -92,9 +110,12 @@ def fetch_m1_bi5(
     end: date,
     point_factor: float,
     getter: Callable[[str], bytes] = http_get,
-    pause: float = 0.0,
+    pause: float = 0.5,
 ) -> pd.DataFrame:
-    """Minutos bid/ask de `start` a `end` (incluidos) con el lector .bi5."""
+    """Minutos bid/ask de `start` a `end` (incluidos) con el lector .bi5.
+
+    `pause` separa las peticiones de cada día para no activar el límite de Dukascopy.
+    """
     frames = {side: [] for side in SIDES}
     day = start
     while day <= end:
@@ -123,13 +144,20 @@ def node_command(symbol: str, start: date, end: date, side: str, directory: Path
         "--volumes",
         "--directory", str(directory),
         "--file-name", file_name,
-        "--retries", "5",
+        "--batch-size", "5",
+        "--batch-pause", "2000",
+        "--retries", "8",
+        "--retry-pause", "5000",
         "--silent",
     ]  # fmt: skip
 
 
 def parse_node_csv(path: Path) -> pd.DataFrame:
+    if path.stat().st_size == 0:
+        return pd.DataFrame(columns=["open", "high", "low", "close"], index=pd.DatetimeIndex([], tz="UTC", name="ts"))
     df = pd.read_csv(path)
+    if df.empty:
+        return pd.DataFrame(columns=["open", "high", "low", "close"], index=pd.DatetimeIndex([], tz="UTC", name="ts"))
     ts_col = df.columns[0]
     ts = df[ts_col]
     if np.issubdtype(ts.dtype, np.number):
@@ -140,28 +168,51 @@ def parse_node_csv(path: Path) -> pd.DataFrame:
     return df[["open", "high", "low", "close"]].astype(float)
 
 
+def node_env() -> dict[str, str]:
+    """Entorno para dukascopy-node. El `fetch` de Node no lee HTTPS_PROXY salvo con NODE_USE_ENV_PROXY."""
+    env = dict(os.environ)
+    if any(env.get(k) for k in ("HTTPS_PROXY", "https_proxy")):
+        env.setdefault("NODE_USE_ENV_PROXY", "1")
+    return env
+
+
 def fetch_m1_node(
     symbol: str,
     start: date,
     end: date,
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     cwd: Path | None = None,
+    rate_limit_retries: int = 3,
+    rate_limit_pause: float = 60.0,
+    sleep: Callable[[float], None] = _time.sleep,
 ) -> pd.DataFrame:
+    """Minutos bid/ask con dukascopy-node.
+
+    Si falla por límite de peticiones (429), espera `rate_limit_pause` · 2^k y reintenta.
+    Cualquier otro fallo se propaga de inmediato.
+    """
     frames = {}
     with tempfile.TemporaryDirectory() as tmp:
         for side in SIDES:
             name = f"{symbol}_{side}_{start:%Y%m%d}_{end:%Y%m%d}"
             cmd = node_command(symbol, start, end, side, Path(tmp), name)
-            proc = runner(cmd, cwd=cwd, capture_output=True, text=True)
-            if proc.returncode != 0:
-                raise DownloadError(f"dukascopy-node falló ({proc.returncode}): {proc.stderr.strip()[:500]}")
+            for attempt in range(rate_limit_retries + 1):
+                proc = runner(cmd, cwd=cwd, capture_output=True, text=True, env=node_env())
+                if proc.returncode == 0:
+                    break
+                detail = (proc.stderr.strip() or proc.stdout.strip())[-500:]
+                if "429" not in detail or attempt == rate_limit_retries:
+                    raise DownloadError(f"dukascopy-node falló ({proc.returncode}): {detail}")
+                wait = rate_limit_pause * 2**attempt
+                log.warning("dukascopy-node: límite de peticiones para %s; reintento en %.0f s", symbol, wait)
+                sleep(wait)
             path = Path(tmp) / f"{name}.csv"
             if not path.exists():
                 raise DownloadError(f"dukascopy-node no generó {path.name}")
             df = parse_node_csv(path)
             lo = pd.Timestamp(start, tz="UTC")
             hi = pd.Timestamp(end + timedelta(days=1), tz="UTC")
-            frames[side] = df[(df.index >= lo) & (df.index < hi)]
+            frames[side] = df[(df.index >= lo) & (df.index < hi)] if len(df) else df
     return _join_sides(frames)
 
 
@@ -195,7 +246,8 @@ def download_m1(
         raise ValueError(f"Motor desconocido: {engine}")
     if engine == "node":
         try:
-            return fetch_m1_node(symbol, start, end, **{k: v for k, v in kwargs.items() if k in ("runner", "cwd")})
+            node_kw = {k: v for k, v in kwargs.items() if k in ("runner", "cwd", "sleep", "rate_limit_pause")}
+            return fetch_m1_node(symbol, start, end, **node_kw)
         except (DownloadError, FileNotFoundError, OSError) as e:
             if not fallback:
                 raise

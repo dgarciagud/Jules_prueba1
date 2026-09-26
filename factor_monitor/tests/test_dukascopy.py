@@ -116,3 +116,57 @@ def test_quality_report_detects_jump():
     q = quality_report(bars, "X")
     assert q["jumps_10mad"].sum() == 1
     assert q["minute_coverage"].iloc[0] == pytest.approx(1.0)
+
+
+def test_node_retries_on_rate_limit(tmp_path):
+    calls, waits = [], []
+
+    def runner(cmd, **kw):
+        calls.append(cmd)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(cmd, 1, "", "Request failed with status 429")
+        d = Path(cmd[cmd.index("--directory") + 1])
+        name = cmd[cmd.index("--file-name") + 1]
+        ms = int(pd.Timestamp("2024-01-02", tz="UTC").timestamp() * 1000)
+        p = 1.1 if "bid" in cmd else 1.2
+        (d / f"{name}.csv").write_text(f"timestamp,open,high,low,close,volume\n{ms},{p},{p},{p},{p},1")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    m1 = dk.fetch_m1_node("eurusd", date(2024, 1, 2), date(2024, 1, 2), runner=runner, sleep=waits.append)
+    assert len(m1) == 1 and waits == [60.0] and len(calls) == 3
+
+
+def test_node_empty_day_is_empty_frame(tmp_path):
+    def runner(cmd, **kw):
+        d = Path(cmd[cmd.index("--directory") + 1])
+        (d / f"{cmd[cmd.index('--file-name') + 1]}.csv").write_text("")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    assert dk.fetch_m1_node("eurusd", date(2024, 1, 1), date(2024, 1, 1), runner=runner).empty
+
+
+def test_http_get_backs_off_on_429(monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    attempts, waits = [], []
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"ok"
+
+    def fake_urlopen(url, timeout):
+        attempts.append(url)
+        if len(attempts) < 3:
+            raise urllib.error.HTTPError(url, 429, "Too Many Requests", {}, None)
+        return Resp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert dk.http_get("https://x", sleep=waits.append) == b"ok"
+    assert waits == [15.0, 30.0]
