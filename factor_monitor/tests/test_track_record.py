@@ -122,3 +122,11 @@ def test_end_to_end_without_look_ahead():
     r2_full = res.intraday_r2[res.intraday_r2["session"] < pd.Timestamp("2024-03-27")].reset_index(drop=True)
     r2_short = short.intraday_r2[short.intraday_r2["session"] < pd.Timestamp("2024-03-27")].reset_index(drop=True)
     pd.testing.assert_frame_equal(r2_full, r2_short)
+
+
+def test_cost_without_spread_is_commission_only():
+    idx = pd.date_range("2024-02-01 10:00", periods=50, freq="5min", tz="UTC")
+    b = pd.DataFrame({"close": 100.0, "spread": np.nan}, index=idx)
+    assert tr.cost_for(b, idx[-1], 1.5) == 1.5
+    b["spread"] = 0.02
+    assert tr.cost_for(b, idx[-1], 1.5) == pytest.approx(2.0 + 1.5)

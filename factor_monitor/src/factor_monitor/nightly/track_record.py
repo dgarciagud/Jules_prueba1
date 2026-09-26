@@ -127,9 +127,9 @@ def cost_for(bars_target: pd.DataFrame | None, ts: pd.Timestamp, commission_bps:
     b = bars_target
     same_slot = b[(b.index.hour == ts.hour) & ((b.index.minute // 30) == (ts.minute // 30))]
     same_slot = same_slot[same_slot.index < ts].tail(20 * 6)
-    if same_slot.empty:
-        return commission_bps
-    return float((same_slot["spread"] / same_slot["close"]).median() * 1e4 + commission_bps)
+    spread_bps = (same_slot["spread"] / same_slot["close"]).median() * 1e4 if not same_slot.empty else np.nan
+    # Histórico descargado solo con bid: sin spread, el coste es solo la comisión.
+    return commission_bps if not np.isfinite(spread_bps) else float(spread_bps + commission_bps)
 
 
 # ---------------------------------------------------------------------------- motor
