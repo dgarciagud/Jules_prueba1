@@ -124,7 +124,7 @@ def test_node_retries_on_rate_limit(tmp_path):
     def runner(cmd, **kw):
         calls.append(cmd)
         if len(calls) == 1:
-            return subprocess.CompletedProcess(cmd, 1, "", "Request failed with status 429")
+            return subprocess.CompletedProcess(cmd, 1, "Something went wrong:\n > Request failed with status 429", "(node) Warning: EnvHttpProxyAgent is experimental")
         d = Path(cmd[cmd.index("--directory") + 1])
         name = cmd[cmd.index("--file-name") + 1]
         ms = int(pd.Timestamp("2024-01-02", tz="UTC").timestamp() * 1000)

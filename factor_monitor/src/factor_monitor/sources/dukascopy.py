@@ -200,7 +200,8 @@ def fetch_m1_node(
                 proc = runner(cmd, cwd=cwd, capture_output=True, text=True, env=node_env())
                 if proc.returncode == 0:
                     break
-                detail = (proc.stderr.strip() or proc.stdout.strip())[-500:]
+                # Node escribe avisos en stderr y el error de la descarga en stdout: se miran los dos.
+                detail = " | ".join(x.strip() for x in (proc.stdout, proc.stderr) if x and x.strip())[-500:]
                 if "429" not in detail or attempt == rate_limit_retries:
                     raise DownloadError(f"dukascopy-node falló ({proc.returncode}): {detail}")
                 wait = rate_limit_pause * 2**attempt
