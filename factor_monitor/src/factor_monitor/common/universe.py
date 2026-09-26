@@ -22,6 +22,7 @@ class Instrument:
     id: str
     kind: str
     dukascopy_id: str | None = None
+    dukascopy_code: str | None = None
     mt5_symbol: str | None = None
     yahoo_ticker: str | None = None
     stooq_ticker: str | None = None

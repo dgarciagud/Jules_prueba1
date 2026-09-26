@@ -19,8 +19,14 @@ on:
       engine:
         description: "Motor de descarga"
         type: choice
-        options: [node, bi5]
-        default: node
+        options: [jetta, node, bi5]
+        default: jetta
+      pace:
+        description: "Segundos entre peticiones por trabajo (Dukascopy limita por IP)"
+        default: "20"
+      sides:
+        description: "'bid,ask' o 'bid' (la mitad de peticiones, sin spread)"
+        default: "bid,ask"
 
 concurrency:
   group: factor-monitor-data-store
@@ -82,9 +88,12 @@ jobs:
           INSTRUMENT: ${{ matrix.instrument }}
           YEARS: ${{ matrix.years }}
           ENGINE: ${{ inputs.engine }}
+          PACE: ${{ inputs.pace }}
+          SIDES: ${{ inputs.sides }}
         run: >
           python -m factor_monitor.nightly.build_bars backfill
           --instrument "$INSTRUMENT" --years "$YEARS" --engine "$ENGINE"
+          --pace "$PACE" --sides "$SIDES"
           --out out --meta "out/meta_${INSTRUMENT}_${YEARS}.json"
       - uses: actions/upload-artifact@v4
         with:

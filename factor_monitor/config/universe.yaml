@@ -3,6 +3,7 @@
 # IDs de Dukascopy verificados contra los metadatos de dukascopy-node 1.50.0
 # (el comentario "desde" indica el inicio de los minutos cuando limita la historia).
 # Un ID a null significa "no disponible": el instrumento se excluye con aviso.
+# `dukascopy_code` es el código del API jetta (motor por defecto).
 # `point_factor` solo lo usa el lector .bi5 de respaldo (precio = entero / factor);
 # es una estimación y debe calibrarse con `build_bars calibrate` antes de usarlo.
 # mt5_symbol se rellena tras el inventario de Darwinex (§3.2).
@@ -11,34 +12,34 @@ overlap_threshold: 0.20        # §5.3: exclusión de factores que contienen al 
 
 instruments:
   # --- Índices objetivo -------------------------------------------------------
-  SPX:   {kind: target, dukascopy_id: usa500idxusd,  mt5_symbol: null, session: us, exchange: XNYS, point_factor: 1000}
-  SX5E:  {kind: target, dukascopy_id: eusidxeur,     mt5_symbol: null, session: eu, exchange: XETR, point_factor: 1000}
-  DAX:   {kind: target, dukascopy_id: deuidxeur,     mt5_symbol: null, session: eu, exchange: XETR, point_factor: 1000}
-  CAC:   {kind: target, dukascopy_id: fraidxeur,     mt5_symbol: null, session: eu, exchange: XPAR, point_factor: 1000}
-  IBEX:  {kind: target, dukascopy_id: espidxeur,     mt5_symbol: null, session: eu, exchange: XMAD, point_factor: 1000}
+  SPX:   {kind: target, dukascopy_id: usa500idxusd, dukascopy_code: USA500.IDX-USD,  mt5_symbol: null, session: us, exchange: XNYS, point_factor: 1000}
+  SX5E:  {kind: target, dukascopy_id: eusidxeur, dukascopy_code: EUS.IDX-EUR,     mt5_symbol: null, session: eu, exchange: XETR, point_factor: 1000}
+  DAX:   {kind: target, dukascopy_id: deuidxeur, dukascopy_code: DEU.IDX-EUR,     mt5_symbol: null, session: eu, exchange: XETR, point_factor: 1000}
+  CAC:   {kind: target, dukascopy_id: fraidxeur, dukascopy_code: FRA.IDX-EUR,     mt5_symbol: null, session: eu, exchange: XPAR, point_factor: 1000}
+  IBEX:  {kind: target, dukascopy_id: espidxeur, dukascopy_code: ESP.IDX-EUR,     mt5_symbol: null, session: eu, exchange: XMAD, point_factor: 1000}
 
   # --- Instrumentos de los factores ------------------------------------------
-  NDX:    {kind: factor, dukascopy_id: usatechidxusd, mt5_symbol: null, session: us, exchange: XNYS, point_factor: 1000}
-  BRENT:  {kind: factor, dukascopy_id: brentcmdusd,   mt5_symbol: null, point_factor: 1000}
-  BUND:   {kind: factor, dukascopy_id: bundtreur,     mt5_symbol: null, point_factor: 1000}   # desde may-2016
-  TBOND:  {kind: factor, dukascopy_id: ustbondtrusd,  mt5_symbol: null, point_factor: 1000}   # desde dic-2018
-  EURUSD: {kind: factor, dukascopy_id: eurusd,        mt5_symbol: null, point_factor: 100000}
+  NDX:    {kind: factor, dukascopy_id: usatechidxusd, dukascopy_code: USATECH.IDX-USD, mt5_symbol: null, session: us, exchange: XNYS, point_factor: 1000}
+  BRENT:  {kind: factor, dukascopy_id: brentcmdusd, dukascopy_code: BRENT.CMD-USD,   mt5_symbol: null, point_factor: 1000}
+  BUND:   {kind: factor, dukascopy_id: bundtreur, dukascopy_code: BUND.TR-EUR,     mt5_symbol: null, point_factor: 1000}   # desde may-2016
+  TBOND:  {kind: factor, dukascopy_id: ustbondtrusd, dukascopy_code: USTBOND.TR-USD,  mt5_symbol: null, point_factor: 1000}   # desde dic-2018
+  EURUSD: {kind: factor, dukascopy_id: eurusd, dukascopy_code: EUR-USD,        mt5_symbol: null, point_factor: 100000}
 
   # --- Componentes de las cestas sectoriales (§4.2) ---------------------------
   # ISP, UCG y ENI solo tienen minutos desde dic-2020. TotalEnergies es `fpfreur`.
   # OMV no existe en Dukascopy: entra en la cesta diaria con yfinance (§3.3).
-  BNP:   {kind: component, dukascopy_id: bnpfreur, point_factor: 1000, yahoo_ticker: BNP.PA,  exchange: XPAR, session: eu}
-  SAN:   {kind: component, dukascopy_id: saneseur, point_factor: 1000, yahoo_ticker: SAN.MC,  exchange: XMAD, session: eu}
-  INGA:  {kind: component, dukascopy_id: inganleur, point_factor: 1000, yahoo_ticker: INGA.AS, exchange: XAMS, session: eu}
-  ISP:   {kind: component, dukascopy_id: ispiteur, point_factor: 1000, yahoo_ticker: ISP.MI,  exchange: XMIL, session: eu}
-  UCG:   {kind: component, dukascopy_id: ucgiteur, point_factor: 1000, yahoo_ticker: UCG.MI,  exchange: XMIL, session: eu}
-  BBVA:  {kind: component, dukascopy_id: bbvaeseur, point_factor: 1000, yahoo_ticker: BBVA.MC, exchange: XMAD, session: eu}
-  DBK:   {kind: component, dukascopy_id: dbkdeeur, point_factor: 1000, yahoo_ticker: DBK.DE,  exchange: XETR, session: eu}
-  GLE:   {kind: component, dukascopy_id: glefreur, point_factor: 1000, yahoo_ticker: GLE.PA,  exchange: XPAR, session: eu}
-  TTE:   {kind: component, dukascopy_id: fpfreur, point_factor: 1000, yahoo_ticker: TTE.PA,  exchange: XPAR, session: eu}
-  ENI:   {kind: component, dukascopy_id: eniiteur, point_factor: 1000, yahoo_ticker: ENI.MI,  exchange: XMIL, session: eu}
-  REP:   {kind: component, dukascopy_id: repeseur, point_factor: 1000, yahoo_ticker: REP.MC,  exchange: XMAD, session: eu}
-  GALP:  {kind: component, dukascopy_id: galppteur, point_factor: 1000, yahoo_ticker: GALP.LS, exchange: XLIS, session: eu}
+  BNP:   {kind: component, dukascopy_id: bnpfreur, dukascopy_code: BNP.FR-EUR, point_factor: 1000, yahoo_ticker: BNP.PA,  exchange: XPAR, session: eu}
+  SAN:   {kind: component, dukascopy_id: saneseur, dukascopy_code: SAN.ES-EUR, point_factor: 1000, yahoo_ticker: SAN.MC,  exchange: XMAD, session: eu}
+  INGA:  {kind: component, dukascopy_id: inganleur, dukascopy_code: INGA.NL-EUR, point_factor: 1000, yahoo_ticker: INGA.AS, exchange: XAMS, session: eu}
+  ISP:   {kind: component, dukascopy_id: ispiteur, dukascopy_code: ISP.IT-EUR, point_factor: 1000, yahoo_ticker: ISP.MI,  exchange: XMIL, session: eu}
+  UCG:   {kind: component, dukascopy_id: ucgiteur, dukascopy_code: UCG.IT-EUR, point_factor: 1000, yahoo_ticker: UCG.MI,  exchange: XMIL, session: eu}
+  BBVA:  {kind: component, dukascopy_id: bbvaeseur, dukascopy_code: BBVA.ES-EUR, point_factor: 1000, yahoo_ticker: BBVA.MC, exchange: XMAD, session: eu}
+  DBK:   {kind: component, dukascopy_id: dbkdeeur, dukascopy_code: DBK.DE-EUR, point_factor: 1000, yahoo_ticker: DBK.DE,  exchange: XETR, session: eu}
+  GLE:   {kind: component, dukascopy_id: glefreur, dukascopy_code: GLE.FR-EUR, point_factor: 1000, yahoo_ticker: GLE.PA,  exchange: XPAR, session: eu}
+  TTE:   {kind: component, dukascopy_id: fpfreur, dukascopy_code: FP.FR-EUR, point_factor: 1000, yahoo_ticker: TTE.PA,  exchange: XPAR, session: eu}
+  ENI:   {kind: component, dukascopy_id: eniiteur, dukascopy_code: ENI.IT-EUR, point_factor: 1000, yahoo_ticker: ENI.MI,  exchange: XMIL, session: eu}
+  REP:   {kind: component, dukascopy_id: repeseur, dukascopy_code: REP.ES-EUR, point_factor: 1000, yahoo_ticker: REP.MC,  exchange: XMAD, session: eu}
+  GALP:  {kind: component, dukascopy_id: galppteur, dukascopy_code: GALP.PT-EUR, point_factor: 1000, yahoo_ticker: GALP.LS, exchange: XLIS, session: eu}
   OMV:   {kind: component, dukascopy_id: null, yahoo_ticker: OMV.VI,  exchange: XWBO, session: eu}
 
 # Factores (§4.3). `sign: -1` invierte el retorno (bonos: sube = sube la

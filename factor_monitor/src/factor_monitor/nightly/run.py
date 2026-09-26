@@ -30,7 +30,7 @@ import pandas as pd
 
 from ..common.runlog import RunLog
 from ..common.universe import Universe, load_universe
-from .build_bars import run_incremental, yesterday_utc
+from .build_bars import add_download_opts, options_from, run_incremental, yesterday_utc
 from .daily_layer import merge_history, run_daily_layer
 from .selection import is_week_end, run_selection
 from .store import BarStore, GhReleaseBackend, LocalBackend
@@ -168,7 +168,7 @@ def run(args, universe: Universe, store: BarStore | None) -> int:
         runlog.step("bars", "skipped", reason="--skip-download")
     else:
         until = date.fromisoformat(args.until) if args.until else yesterday_utc()
-        ok &= run_step("bars", lambda: run_incremental(universe, store, until, args.engine, runlog), runlog)
+        ok &= run_step("bars", lambda: run_incremental(universe, store, until, options_from(args), runlog), runlog)
         if runlog.steps.get("bars", {}).get("failed"):
             ok = False  # fallo parcial: se sigue con lo disponible, pero el job debe avisar
     ok &= run_step("daily", lambda: step_daily(results, store, universe, runlog, args.years, args.full), runlog)
@@ -187,7 +187,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--store-dir", default=None, help="Almacén local en lugar de la release")
     p.add_argument("--release-tag", default="data-store")
     p.add_argument("--cache", default=".cache/store")
-    p.add_argument("--engine", choices=["node", "bi5"], default="node")
+    add_download_opts(p)
     p.add_argument("--until", default=None)
     p.add_argument("--years", type=int, default=2, help="Años de velas que lee la capa diaria")
     p.add_argument("--full", action="store_true", help="Recalcula la capa diaria entera con --years años")

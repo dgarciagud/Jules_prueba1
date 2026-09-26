@@ -15,6 +15,7 @@ import argparse
 import json
 import logging
 import sys
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -24,7 +25,7 @@ import pandas as pd
 from ..common.bars import m1_to_bars, merge_bars, quality_report, split_by_year
 from ..common.runlog import RunLog
 from ..common.universe import Instrument, Universe, load_universe
-from ..sources.dukascopy import DownloadError, download_m1, fetch_m1_bi5, fetch_m1_node
+from ..sources.dukascopy import DownloadError, Pacer, download_m1, fetch_m1_bi5, fetch_m1_node
 from .store import BarStore, Backend, GhReleaseBackend, LocalBackend
 
 log = logging.getLogger(__name__)
@@ -67,9 +68,29 @@ def build_matrix(instruments: list[str], start_year: int, end_year: int) -> list
     return out
 
 
-def download_bars(inst: Instrument, start: date, end: date, engine: str) -> pd.DataFrame:
-    m1 = download_m1(inst.dukascopy_id, start, end, inst.point_factor, engine=engine)
-    return m1_to_bars(m1)
+@dataclass
+class DownloadOptions:
+    engine: str = "jetta"
+    pace: float = 20.0
+    sides: tuple[str, ...] = ("bid", "ask")
+    _pacer: Pacer | None = None
+
+    @property
+    def pacer(self) -> Pacer:
+        # Un único Pacer por proceso: el límite de Dukascopy es por IP, no por instrumento.
+        if self._pacer is None:
+            self._pacer = Pacer(interval=self.pace)
+        return self._pacer
+
+
+def download_bars(inst: Instrument, start: date, end: date, opts: DownloadOptions | str) -> pd.DataFrame:
+    if isinstance(opts, str):
+        opts = DownloadOptions(engine=opts)
+    m1 = download_m1(
+        inst.dukascopy_id, start, end, inst.point_factor, engine=opts.engine,
+        code=inst.dukascopy_code, pacer=opts.pacer, sides=opts.sides,
+    )  # fmt: skip
+    return m1_to_bars(m1, bid_only="ask" not in opts.sides)
 
 
 # ---------------------------------------------------------------------------- comandos
@@ -94,7 +115,7 @@ def cmd_backfill(args, universe: Universe) -> None:
         if start > end:
             continue
         try:
-            bars = download_bars(inst, start, end, args.engine)
+            bars = download_bars(inst, start, end, options_from(args))
         except DownloadError as e:
             runlog.warn(STEP, f"{inst.id} {year}: {e}", instrument=inst.id, year=year)
             failed.append(year)
@@ -128,7 +149,7 @@ def run_incremental(
     universe: Universe,
     store: BarStore,
     until: date,
-    engine: str,
+    engine: "DownloadOptions | str",
     runlog: RunLog,
     instruments: str = "all",
 ) -> list[str]:
@@ -167,7 +188,7 @@ def cmd_incremental(args, universe: Universe, backend: Backend) -> None:
     runlog = RunLog()
     store = BarStore(backend, Path(args.cache))
     until = date.fromisoformat(args.until) if args.until else yesterday_utc()
-    failed = run_incremental(universe, store, until, args.engine, runlog, args.instruments)
+    failed = run_incremental(universe, store, until, options_from(args), runlog, args.instruments)
     if args.meta:
         runlog.merge_into(Path(args.meta))
     if failed and args.strict:
@@ -213,6 +234,17 @@ def cmd_quality(args, universe: Universe, backend: Backend) -> None:
 # ---------------------------------------------------------------------------- CLI
 
 
+def options_from(args) -> DownloadOptions:
+    sides = tuple(x.strip() for x in getattr(args, "sides", "bid,ask").split(",") if x.strip())
+    return DownloadOptions(engine=args.engine, pace=getattr(args, "pace", 20.0), sides=sides)
+
+
+def add_download_opts(sp) -> None:
+    sp.add_argument("--engine", choices=["jetta", "node", "bi5"], default="jetta")
+    sp.add_argument("--pace", type=float, default=20.0, help="Segundos mínimos entre peticiones (motor jetta)")
+    sp.add_argument("--sides", default="bid,ask", help="'bid,ask' o 'bid' (la mitad de peticiones, sin spread)")
+
+
 def make_backend(args) -> Backend:
     if args.store_dir:
         return LocalBackend(Path(args.store_dir))
@@ -239,7 +271,7 @@ def main(argv: list[str] | None = None) -> None:
     sp.add_argument("--instrument", required=True)
     sp.add_argument("--years", required=True, help="AAAA o AAAA-AAAA")
     sp.add_argument("--out", required=True)
-    sp.add_argument("--engine", choices=["node", "bi5"], default="node")
+    add_download_opts(sp)
     sp.add_argument("--meta", default=None)
 
     sp = sub.add_parser("publish")
@@ -249,7 +281,7 @@ def main(argv: list[str] | None = None) -> None:
     sp = sub.add_parser("incremental")
     sp.add_argument("--instruments", default="all")
     sp.add_argument("--until", default=None)
-    sp.add_argument("--engine", choices=["node", "bi5"], default="node")
+    add_download_opts(sp)
     sp.add_argument("--meta", default=None)
     sp.add_argument("--strict", action="store_true", help="Código de salida 1 si falla algún instrumento")
     store_opts(sp)

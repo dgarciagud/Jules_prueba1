@@ -16,11 +16,12 @@ def empty_bars() -> pd.DataFrame:
     return pd.DataFrame({c: pd.Series(dtype="float64") for c in BAR_COLUMNS}, index=idx)
 
 
-def m1_to_bars(m1: pd.DataFrame, bar_minutes: int = BAR_MINUTES) -> pd.DataFrame:
+def m1_to_bars(m1: pd.DataFrame, bar_minutes: int = BAR_MINUTES, bid_only: bool = False) -> pd.DataFrame:
     """Minutos bid/ask (índice UTC = apertura del minuto) → velas de mid.
 
     Se descartan los minutos con ask <= bid. `spread` es el spread medio de cierre
     de los minutos de la vela y `n` el número de minutos con dato.
+    Con `bid_only` (solo se descargó el bid), el precio es el bid y el spread NaN.
     Marca de la vela = apertura, en UTC.
     """
     if m1.empty:
@@ -28,12 +29,16 @@ def m1_to_bars(m1: pd.DataFrame, bar_minutes: int = BAR_MINUTES) -> pd.DataFrame
     missing = set(M1_COLUMNS) - set(m1.columns)
     if missing:
         raise ValueError(f"Faltan columnas M1: {sorted(missing)}")
-    m1 = m1[m1["ask_close"] > m1["bid_close"]]
-    mid = pd.DataFrame(
-        {f: (m1[f"bid_{f}"] + m1[f"ask_{f}"]) / 2 for f in ("open", "high", "low", "close")},
-        index=m1.index,
-    )
-    mid["spread"] = m1["ask_close"] - m1["bid_close"]
+    if bid_only:
+        mid = pd.DataFrame({f: m1[f"bid_{f}"] for f in ("open", "high", "low", "close")}, index=m1.index)
+        mid["spread"] = np.nan
+    else:
+        m1 = m1[m1["ask_close"] > m1["bid_close"]]
+        mid = pd.DataFrame(
+            {f: (m1[f"bid_{f}"] + m1[f"ask_{f}"]) / 2 for f in ("open", "high", "low", "close")},
+            index=m1.index,
+        )
+        mid["spread"] = m1["ask_close"] - m1["bid_close"]
     rule = f"{bar_minutes}min"
     agg = mid.resample(rule, label="left", closed="left").agg(
         {"open": "first", "high": "max", "low": "min", "close": "last", "spread": "mean"}

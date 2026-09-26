@@ -85,10 +85,10 @@ def test_node_command_and_fallback(tmp_path):
     def getter(url):
         return make_bi5([(0, 1.1, 1.1, 1.1, 1.1, 1.0)], 1e5) if "BID" in url else make_bi5([(0, 1.2, 1.2, 1.2, 1.2, 1.0)], 1e5)
 
-    m1 = dk.download_m1("eurusd", date(2024, 1, 2), date(2024, 1, 2), 1e5, runner=failing_runner, getter=getter)
+    m1 = dk.download_m1("eurusd", date(2024, 1, 2), date(2024, 1, 2), 1e5, engine="node", runner=failing_runner, getter=getter)
     assert len(m1) == 1
     with pytest.raises(dk.DownloadError):
-        dk.download_m1("eurusd", date(2024, 1, 2), date(2024, 1, 2), 1e5, runner=failing_runner, fallback=False)
+        dk.download_m1("eurusd", date(2024, 1, 2), date(2024, 1, 2), 1e5, engine="node", runner=failing_runner, fallback=False)
 
 
 def test_node_csv_parsing_and_range(tmp_path):
@@ -170,3 +170,87 @@ def test_http_get_backs_off_on_429(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     assert dk.http_get("https://x", sleep=waits.append) == b"ok"
     assert waits == [15.0, 30.0]
+
+
+DATA = Path(__file__).parent / "data"
+
+
+def test_jetta_decoder_matches_dukascopy_node():
+    raw = (DATA / "jetta_usa500_20260924_bid.json").read_bytes()
+    ours = dk.decode_jetta_candles(raw)
+    ref = pd.read_csv(DATA / "node_usa500_20260924_bid.csv")
+    ref.index = pd.to_datetime(ref["timestamp"], unit="ms", utc=True)
+    assert len(ours) == len(ref) == 1335
+    assert (ours.index == ref.index).all()
+    for c in ("open", "high", "low", "close"):
+        np.testing.assert_allclose(ours[c].to_numpy(), ref[c].to_numpy(), rtol=0, atol=1e-9)
+    assert ours.index[0] == pd.Timestamp("2026-09-24 00:00", tz="UTC")
+    assert dk.decode_jetta_candles(b"").empty
+    assert dk.decode_jetta_candles(b'{"timestamp": 0, "times": []}').empty
+
+
+def test_jetta_url_and_code():
+    assert dk.jetta_code("USA500.IDX/USD") == "USA500.IDX-USD"
+    assert dk.jetta_url("BRENT.CMD-USD", date(2024, 1, 3), "bid").endswith("/BRENT.CMD-USD/BID/2024/1/3")
+
+
+class FakeClock:
+    def __init__(self):
+        self.t = 0.0
+        self.sleeps = []
+
+    def sleep(self, s):
+        self.sleeps.append(s)
+        self.t += s
+
+    def now(self):
+        return self.t
+
+
+def test_pacer_spacing_and_backoff(monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    clock = FakeClock()
+    pacer = dk.Pacer(interval=20.0, rate_limit_pause=60.0, sleep=clock.sleep, clock=clock.now)
+    calls = []
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"{}"
+
+    def fake_urlopen(url, timeout):
+        calls.append((url, clock.t))
+        if len(calls) == 2:
+            raise urllib.error.HTTPError(url, 429, "Too Many Requests", {}, None)
+        return Resp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    dk.http_get_paced("u1", pacer)
+    dk.http_get_paced("u2", pacer)
+    times = [t for _, t in calls]
+    assert times[1] - times[0] == 20.0          # ritmo fijo
+    assert times[2] - times[1] >= 60.0          # espera larga tras el 429
+    assert pacer.rate_limited == 1 and pacer.requests == 3
+
+
+def test_fetch_jetta_skips_saturday_and_bid_only():
+    raw = (DATA / "jetta_usa500_20260924_bid.json").read_bytes()
+    urls = []
+
+    def getter(url):
+        urls.append(url)
+        return raw
+
+    m1 = dk.fetch_m1_jetta("USA500.IDX-USD", date(2026, 9, 25), date(2026, 9, 27), sides=("bid",), getter=getter)
+    assert len(urls) == 2 and all("/BID/" in u for u in urls)   # viernes y domingo, sin sábado
+    assert (m1["ask_close"] == m1["bid_close"]).all()
+    bars5 = m1_to_bars(m1, bid_only=True)
+    assert len(bars5) > 0 and bars5["spread"].isna().all()
+    assert m1_to_bars(m1).empty   # sin el modo bid_only, ask == bid se descarta
