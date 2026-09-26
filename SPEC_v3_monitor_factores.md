@@ -309,8 +309,12 @@ Con el mercado incluido, el modelo de cada objetivo es el mismo durante toda su 
 - Solo velas **cerradas**. La vela en curso nunca entra.
 - Retorno implícito r̂_t = Σ β_f · r_f,t y residuo ε_t = r_t − r̂_t.
 - Gap acumulado G_t en L = 6 y L = 12 velas.
-- **Varianza del gap** con Newey-West (q = 2):
-  V_t = Σ_{s∈ventana} σ_b(s)² · [1 + 2 · Σ_{k=1..2} (1 − k/3) · ρ_k]
+- **Varianza del gap** con autocorrelación hasta el retardo 2:
+  V_t = Σ_{s∈ventana} σ_b(s)² · [1 + 2 · Σ_{k=1..2} (1 − k/L) · ρ_k]
+
+  Son los pesos exactos de la varianza de una suma de L residuos. Los de Bartlett
+  (1 − k/3) la infravaloran con autocorrelación positiva e inflan el z (con ρ₁ = 0,2,
+  |z| ≥ 2 salía un 6,5 % de las veces en lugar del 4,6 %).
 - **z_t = G_t / √V_t**.
 - **Descomposición** del implícito acumulado en la ventana por factor, en pb y en %.
 - **Origen**, con I = implícito acumulado en la ventana, R = retorno real acumulado y s_I, s_R sus desviaciones típicas para esa longitud L (estimadas en las 10 sesiones):

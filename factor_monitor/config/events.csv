@@ -1,0 +1,5 @@
+# Calendario de eventos macro (SPEC v3 §3.7). Fuente de verdad, curada y versionada.
+# Nunca se inventan fechas: cada fila debe citar su fuente oficial en `source`.
+# La EIA semanal no se lista aquí: se genera por regla (common/events.py).
+# block_before_min / block_after_min vacíos = bloqueo por defecto del tipo.
+datetime_utc,event_type,region,block_before_min,block_after_min,source
