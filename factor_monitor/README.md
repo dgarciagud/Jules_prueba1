@@ -48,6 +48,7 @@ factor_monitor/
 │   │   ├── store.py, build_bars.py # almacén en la release y descargas
 │   │   ├── daily_layer.py, selection.py
 │   │   ├── track_record.py         # historial de alertas sin look-ahead y umbrales z*
+│   │   ├── report.py               # informe HTML para GitHub Pages
 │   │   └── run.py                  # pipeline nocturno
 │   └── live/
 │       ├── sync_results.py, consistency.py, engine.py, alerts.py, runner.py
@@ -141,8 +142,16 @@ Colores: un color fijo por factor (paleta validada para daltonismo en modo claro
 | `track_record` | historial de alertas; completo el primer día hábil del mes, incremental el resto | `track_record_alerts.parquet`, `track_record.parquet`, `intraday_r2.parquet`, `thresholds.json` |
 | `recent_bars` | últimas 15 sesiones de velas de 5 min | `recent_bars.parquet` |
 | — | estado, fin de datos, versión, avisos | `run_meta.json` |
+| — | informe estático (estado, selección, régimen, umbrales e historial) | `index.html`, `.nojekyll` |
 
 Si un paso falla, sus ficheros anteriores no se tocan y el job termina en rojo.
+
+## Informe web (GitHub Pages)
+
+El nocturno escribe `index.html` en la rama `results`. Para verlo desde el móvil:
+Settings → Pages → *Deploy from a branch* → rama `results`, carpeta `/ (root)`.
+URL: https://dgarciagud.github.io/Jules_prueba1/ (pública, como el repositorio).
+Las alertas en vivo solo están en el dashboard local.
 
 ## GitHub Actions
 

@@ -39,6 +39,7 @@ from ..common.universe import Universe, load_universe
 from .build_bars import add_download_opts, options_from, run_incremental, yesterday_utc
 from .daily_layer import merge_history, run_daily_layer
 from .selection import backfill_history, is_week_end, run_selection
+from .report import write_report
 from .track_record import aggregate, run_track_record
 from .store import BarStore, GhReleaseBackend, LocalBackend
 
@@ -242,6 +243,11 @@ def run(args, universe: Universe, store: BarStore | None) -> int:
     ok &= run_step("track_record", lambda: step_track_record(results, store, universe, runlog, args.full, config_dir), runlog)
     ok &= run_step("recent_bars", lambda: step_recent_bars(results, store, universe, runlog), runlog)
     meta = write_run_meta(results, runlog)
+    try:  # después del meta para que el informe muestre el estado final; siempre se genera
+        write_report(results)
+    except Exception:  # noqa: BLE001
+        log.error("Informe HTML fallido:\n%s", traceback.format_exc())
+        ok = False
     log.info("Fin de datos: %s; pasos: %s", meta["data_end"], {k: v["status"] for k, v in meta["steps"].items()})
     return 0 if ok else 1
 
