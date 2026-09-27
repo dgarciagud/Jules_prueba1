@@ -1,0 +1,101 @@
+{
+  "as_of": "2024-12-30",
+  "valid_from": "2025-01-06",
+  "valid_to": "2025-01-10",
+  "targets": {
+    "SPX": {
+      "status": "ok",
+      "factors": [
+        "BRENT"
+      ],
+      "market": false,
+      "shares": {
+        "BRENT": 0.9733959572262041,
+        "USD": 0.02660404277379587
+      },
+      "signs": {
+        "BRENT": -1,
+        "USD": 0
+      },
+      "estimate_date": "2024-12-30"
+    },
+    "SX5E": {
+      "status": "ok",
+      "factors": [
+        "IA",
+        "USD"
+      ],
+      "market": true,
+      "shares": {
+        "BRENT": 0.06238292735738806,
+        "IA": 0.49960019762537805,
+        "USD": 0.4380168750172313
+      },
+      "signs": {
+        "BRENT": 1,
+        "IA": 1,
+        "USD": -1
+      },
+      "estimate_date": "2024-12-30"
+    },
+    "DAX": {
+      "status": "ok",
+      "factors": [
+        "IA"
+      ],
+      "market": true,
+      "shares": {
+        "BRENT": 0.10299865826965604,
+        "IA": 0.7493585899606898,
+        "USD": 0.1476427517696548
+      },
+      "signs": {
+        "BRENT": 1,
+        "IA": 1,
+        "USD": -1
+      },
+      "estimate_date": "2020-12-30"
+    },
+    "CAC": {
+      "status": "ok",
+      "factors": [
+        "USD",
+        "IA",
+        "BRENT"
+      ],
+      "market": true,
+      "shares": {
+        "BRENT": 0.2336193922709975,
+        "IA": 0.3816236665952096,
+        "USD": 0.38475694113379905
+      },
+      "signs": {
+        "BRENT": -1,
+        "IA": -1,
+        "USD": 1
+      },
+      "estimate_date": "2024-12-30"
+    },
+    "IBEX": {
+      "status": "sin_datos",
+      "factors": [],
+      "market": true,
+      "shares": {},
+      "signs": {}
+    },
+    "BANKS": {
+      "status": "sin_datos",
+      "factors": [],
+      "market": true,
+      "shares": {},
+      "signs": {}
+    },
+    "ENERGY": {
+      "status": "sin_datos",
+      "factors": [],
+      "market": true,
+      "shares": {},
+      "signs": {}
+    }
+  }
+}

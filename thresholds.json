@@ -1,0 +1,42 @@
+{
+  "target_alerts_per_week": 2.0,
+  "z_floor": 2.0,
+  "targets": {
+    "SPX": {
+      "r2_median": 0.10515732096568742,
+      "z_star": 2.0,
+      "sessions": 1187
+    },
+    "SX5E": {
+      "r2_median": 0.85421649411708,
+      "z_star": 2.913,
+      "sessions": 946
+    },
+    "DAX": {
+      "r2_median": 0.8846821801948016,
+      "z_star": 3.175,
+      "sessions": 452
+    },
+    "CAC": {
+      "r2_median": 0.8482339051153568,
+      "z_star": 2.925,
+      "sessions": 946
+    },
+    "IBEX": {
+      "r2_median": null,
+      "z_star": 2.5,
+      "sessions": 0
+    },
+    "BANKS": {
+      "r2_median": null,
+      "z_star": 2.5,
+      "sessions": 0
+    },
+    "ENERGY": {
+      "r2_median": null,
+      "z_star": 2.5,
+      "sessions": 0
+    }
+  },
+  "computed": "full"
+}
