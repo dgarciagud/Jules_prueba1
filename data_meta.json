@@ -1,18 +1,18 @@
 {
-  "run_utc": "2026-09-27T21:35:06+00:00",
+  "run_utc": "2026-09-27T21:38:52+00:00",
   "data_end": "2026-09-25",
-  "code_version": "e647c86915703e0b7f90ddc843b2964263b6c605",
+  "code_version": "fc20ae2f70fbb7a28c24126bade80322316de102",
   "steps": {
     "data": {
       "status": "ok",
-      "at": "2026-09-27T21:34:25+00:00",
+      "at": "2026-09-27T21:38:13+00:00",
       "series": 61,
       "failed": 0,
       "from_previous": 0
     },
     "attribution": {
       "status": "ok",
-      "at": "2026-09-27T21:35:06+00:00",
+      "at": "2026-09-27T21:38:52+00:00",
       "indices": 2
     }
   },
