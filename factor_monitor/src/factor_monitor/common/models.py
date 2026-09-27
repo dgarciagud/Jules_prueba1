@@ -1,4 +1,4 @@
-"""Modelos: MCO con errores HAC, Shapley (LMG) del R² y ridge con validación cruzada por sesiones."""
+"""Modelos: MCO con errores HAC y descomposición Shapley (LMG) del R²."""
 
 from __future__ import annotations
 
@@ -106,74 +106,3 @@ def shapley_shares(shapley: pd.Series, market: str | None = None) -> pd.Series:
     if denom <= 0:
         return s * 0.0
     return s / denom
-
-
-@dataclass
-class RidgeModel:
-    coef: pd.Series        # sobre factores estandarizados
-    intercept: float
-    x_mean: pd.Series
-    x_std: pd.Series
-    lam: float
-
-    @property
-    def betas(self) -> pd.Series:
-        """Betas en las unidades originales de los factores."""
-        return self.coef / self.x_std
-
-    def predict(self, X: pd.DataFrame) -> pd.Series:
-        Xs = (X[self.coef.index] - self.x_mean) / self.x_std
-        return Xs @ self.coef + self.intercept
-
-    def contributions(self, X: pd.DataFrame) -> pd.DataFrame:
-        """Aportación de cada factor al implícito (sin la constante)."""
-        Xs = (X[self.coef.index] - self.x_mean) / self.x_std
-        return Xs * self.coef
-
-
-def _ridge_solve(yv: np.ndarray, xs: np.ndarray, lam: float) -> tuple[np.ndarray, float]:
-    n, k = xs.shape
-    ym = yv.mean()
-    xm = xs.mean(axis=0)
-    Xc, yc = xs - xm, yv - ym
-    coef = np.linalg.solve(Xc.T @ Xc + lam * n * np.eye(k), Xc.T @ yc)
-    return coef, float(ym - xm @ coef)
-
-
-def ridge_fit(y: pd.Series, X: pd.DataFrame, lam: float) -> RidgeModel:
-    yv, xv, _ = _clean(y, X)
-    mean, std = xv.mean(axis=0), xv.std(axis=0)
-    std = np.where(std > 0, std, 1.0)
-    coef, b0 = _ridge_solve(yv, (xv - mean) / std, lam)
-    # El intercepto se expresa sobre los factores estandarizados con la media de la ventana.
-    return RidgeModel(pd.Series(coef, X.columns), b0, pd.Series(mean, X.columns), pd.Series(std, X.columns), lam)
-
-
-DEFAULT_LAMBDAS = np.concatenate([[0.0], np.logspace(-5, 0, 26)])
-
-
-def ridge_cv(
-    y: pd.Series,
-    X: pd.DataFrame,
-    groups: pd.Series,
-    lambdas: np.ndarray = DEFAULT_LAMBDAS,
-) -> RidgeModel:
-    """Ridge con λ elegido dejando fuera una sesión cada vez (`groups` = id de sesión)."""
-    df = pd.concat([y.rename("__y__"), X, groups.rename("__g__")], axis=1).dropna()
-    yv = df["__y__"].to_numpy(float)
-    xv = df[X.columns].to_numpy(float)
-    g = df["__g__"].to_numpy()
-    mean, std = xv.mean(axis=0), xv.std(axis=0)
-    std = np.where(std > 0, std, 1.0)
-    xs = (xv - mean) / std
-    uniq = np.unique(g)
-    if len(uniq) < 2:
-        return ridge_fit(y, X, float(lambdas[0]))
-    errors = np.zeros(len(lambdas))
-    for grp in uniq:
-        test = g == grp
-        for i, lam in enumerate(lambdas):
-            coef, b0 = _ridge_solve(yv[~test], xs[~test], lam)
-            errors[i] += ((yv[test] - xs[test] @ coef - b0) ** 2).sum()
-    best = float(lambdas[int(np.argmin(errors))])
-    return ridge_fit(y, X, best)

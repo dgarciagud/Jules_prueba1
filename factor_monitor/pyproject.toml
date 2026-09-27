@@ -5,24 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "factor-monitor"
 version = "0.1.0"
-description = "Monitor de drivers y dislocaciones intradía con modelos de factores"
+description = "Informe diario de sectores y factores de índices bursátiles"
 requires-python = ">=3.11"
 dependencies = [
     "numpy==2.4.6",
     "pandas==3.0.6",
     "pyarrow==25.0.1",
     "PyYAML==6.0.3",
-    "exchange_calendars==4.13.2",
 ]
 
 [project.optional-dependencies]
-nightly = []
-# Parte local (Windows). El lockfile de esta parte se genera en el PC con `pip freeze`.
-live = [
-    "MetaTrader5>=5.0.45; sys_platform == 'win32'",
-    "streamlit>=1.37",
-    "plyer>=2.1",
-]
 dev = ["pytest==9.1.1"]
 
 [tool.setuptools.packages.find]

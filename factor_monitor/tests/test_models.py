@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from factor_monitor.common.models import ols, ridge_cv, shapley_lmg, shapley_shares
+from factor_monitor.common.models import ols, shapley_lmg, shapley_shares
 
 
 def synthetic(n=3000, betas=(0.8, -0.5, 0.0), noise=0.5, seed=1):
@@ -34,22 +34,3 @@ def test_shapley_shares_exclude_market():
     shares = shapley_shares(s, market="MKT")
     assert shares["A"] == pytest.approx(0.75) and "MKT" not in shares
     assert shapley_shares(s)["A"] == pytest.approx(0.15 / 0.7)
-
-
-def test_ridge_recovers_betas_with_session_cv():
-    y, X = synthetic(n=1020, noise=0.3)
-    groups = pd.Series(np.repeat(np.arange(10), 102))
-    model = ridge_cv(y, X, groups)
-    assert model.betas.to_numpy() == pytest.approx([0.8, -0.5, 0.0], abs=0.05)
-    pred = model.predict(X)
-    contrib = model.contributions(X)
-    assert np.allclose(contrib.sum(axis=1) + model.intercept, pred)
-
-
-def test_ridge_shrinks_noise_only_model():
-    rng = np.random.default_rng(3)
-    X = pd.DataFrame(rng.normal(size=(300, 3)), columns=list("abc"))
-    y = pd.Series(rng.normal(size=300))
-    model = ridge_cv(y, X, pd.Series(np.repeat(np.arange(10), 30)))
-    assert model.lam > 0
-    assert np.abs(model.betas).max() < 0.15
