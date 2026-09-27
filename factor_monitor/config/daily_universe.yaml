@@ -1,0 +1,103 @@
+# Universo del informe diario (datos de cierre diario de Yahoo Finance; Stooq de respaldo).
+#
+# kind: price -> rentabilidad logarítmica del cierre; yield -> cambio del nivel en puntos básicos.
+# Los sectores usan la taxonomía de Yahoo/Morningstar (la misma para ETF y acciones).
+
+sectors:
+  technology:             Tecnología
+  financial_services:     Financiero
+  consumer_cyclical:      Consumo discrecional
+  communication_services: Comunicaciones
+  healthcare:             Salud
+  industrials:            Industria
+  consumer_defensive:     Consumo básico
+  energy:                 Energía
+  utilities:              Utilities
+  real_estate:            Inmobiliario
+  basic_materials:        Materiales
+
+factors:
+  US10Y:  {name: "Tipo 10 años EE.UU.", kind: yield, yahoo: "^TNX"}
+  BUND:   {name: "Bonos alemanes largos (ETF 10,5+ años)", kind: price, yahoo: "EXX6.DE"}   # precio: sube si bajan los tipos
+  OIL:    {name: "Petróleo Brent", kind: price, yahoo: "BZ=F", stooq: "cb.f"}
+  USD:    {name: "Índice dólar (DXY)", kind: price, yahoo: "DX-Y.NYB", stooq: "dx.f"}
+  EURUSD: {name: "EUR/USD", kind: price, yahoo: "EURUSD=X", stooq: "eurusd"}
+  AI:     {name: "Semiconductores / IA (SMH)", kind: price, yahoo: "SMH", stooq: "smh.us"}
+  GOLD:   {name: "Oro", kind: price, yahoo: "GC=F", stooq: "xauusd"}
+  VIX:    {name: "Volatilidad (VIX)", kind: yield, yahoo: "^VIX"}
+
+indices:
+  SPX:
+    name: S&P 500
+    yahoo: "^GSPC"
+    stooq: "^spx"
+    region: us
+    # Sectores mediante los ETF Select Sector SPDR. Pesos estimados con el propio índice, encogidos
+    # hacia los de SPY en Yahoo (clasificación Morningstar): los ETF limitan el peso de sus mayores
+    # valores y los datos por sí solos no distinguen bien los sectores pequeños.
+    weights_from_fund: SPY
+    shrink: 1.0
+    sectors:
+      technology:             {yahoo: XLK,  stooq: xlk.us}
+      financial_services:     {yahoo: XLF,  stooq: xlf.us}
+      consumer_cyclical:      {yahoo: XLY,  stooq: xly.us}
+      communication_services: {yahoo: XLC,  stooq: xlc.us}   # desde jun-2018
+      healthcare:             {yahoo: XLV,  stooq: xlv.us}
+      industrials:            {yahoo: XLI,  stooq: xli.us}
+      consumer_defensive:     {yahoo: XLP,  stooq: xlp.us}
+      energy:                 {yahoo: XLE,  stooq: xle.us}
+      utilities:              {yahoo: XLU,  stooq: xlu.us}
+      real_estate:            {yahoo: XLRE, stooq: xlre.us}  # desde oct-2015
+      basic_materials:        {yahoo: XLB,  stooq: xlb.us}
+
+  CAC:
+    name: CAC 40
+    yahoo: "^FCHI"
+    stooq: "^cac"
+    region: eu
+    # Sectores construidos con los componentes. Pesos estimados con el propio índice (ver data.py);
+    # sector según Yahoo (taxonomía Morningstar), fijado aquí para no depender de su API.
+    # Composición vigente desde el 22-12-2025 (entra Eiffage, sale Edenred; en sep-2025 entró
+    # Euronext y salió Teleperformance). Sin cambios en jun-2026 ni sep-2026. Revisar cada trimestre.
+    composition_since: 2025-12-22
+    components:
+      - {yahoo: AC.PA,    name: Accor,                      sector: consumer_cyclical}
+      - {yahoo: AI.PA,    name: Air Liquide,                sector: basic_materials}
+      - {yahoo: AIR.PA,   name: Airbus,                     sector: industrials}
+      - {yahoo: MT.AS,    name: ArcelorMittal,              sector: basic_materials}
+      - {yahoo: CS.PA,    name: AXA,                        sector: financial_services}
+      - {yahoo: BNP.PA,   name: BNP Paribas,                sector: financial_services}
+      - {yahoo: EN.PA,    name: Bouygues,                   sector: industrials}
+      - {yahoo: BVI.PA,   name: Bureau Veritas,             sector: industrials}
+      - {yahoo: CAP.PA,   name: Capgemini,                  sector: technology}
+      - {yahoo: CA.PA,    name: Carrefour,                  sector: consumer_defensive}
+      - {yahoo: ACA.PA,   name: Crédit Agricole,            sector: financial_services}
+      - {yahoo: BN.PA,    name: Danone,                     sector: consumer_defensive}
+      - {yahoo: DSY.PA,   name: Dassault Systèmes,          sector: technology}
+      - {yahoo: FGR.PA,   name: Eiffage,                    sector: industrials}
+      - {yahoo: ENGI.PA,  name: Engie,                      sector: utilities}
+      - {yahoo: EL.PA,    name: EssilorLuxottica,           sector: healthcare}
+      - {yahoo: ERF.PA,   name: Eurofins Scientific,        sector: healthcare}
+      - {yahoo: ENX.PA,   name: Euronext,                   sector: financial_services}
+      - {yahoo: RMS.PA,   name: Hermès,                     sector: consumer_cyclical}
+      - {yahoo: KER.PA,   name: Kering,                     sector: consumer_cyclical}
+      - {yahoo: OR.PA,    name: L'Oréal,                    sector: consumer_defensive}
+      - {yahoo: LR.PA,    name: Legrand,                    sector: industrials}
+      - {yahoo: MC.PA,    name: LVMH,                       sector: consumer_cyclical}
+      - {yahoo: ML.PA,    name: Michelin,                   sector: consumer_cyclical}
+      - {yahoo: ORA.PA,   name: Orange,                     sector: communication_services}
+      - {yahoo: RI.PA,    name: Pernod Ricard,              sector: consumer_defensive}
+      - {yahoo: PUB.PA,   name: Publicis,                   sector: communication_services}
+      - {yahoo: RNO.PA,   name: Renault,                    sector: consumer_cyclical}
+      - {yahoo: SAF.PA,   name: Safran,                     sector: industrials}
+      - {yahoo: SGO.PA,   name: Saint-Gobain,               sector: industrials}
+      - {yahoo: SAN.PA,   name: Sanofi,                     sector: healthcare}
+      - {yahoo: SU.PA,    name: Schneider Electric,         sector: industrials}
+      - {yahoo: GLE.PA,   name: Société Générale,           sector: financial_services}
+      - {yahoo: STLAP.PA, name: Stellantis,                 sector: consumer_cyclical}
+      - {yahoo: STMPA.PA, name: STMicroelectronics,         sector: technology}
+      - {yahoo: HO.PA,    name: Thales,                     sector: industrials}
+      - {yahoo: TTE.PA,   name: TotalEnergies,              sector: energy}
+      - {yahoo: URW.PA,   name: Unibail-Rodamco-Westfield,  sector: real_estate}
+      - {yahoo: VIE.PA,   name: Veolia,                     sector: industrials}
+      - {yahoo: DG.PA,    name: Vinci,                      sector: industrials}

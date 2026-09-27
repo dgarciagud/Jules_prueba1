@@ -1,0 +1,83 @@
+name: factor-monitor daily
+
+# Informe diario de sectores y factores. Paso 1: descarga de cierres diarios (Yahoo, Stooq de
+# respaldo), pesos sectoriales y comprobación. La salida se guarda en la release `daily-data`
+# (respaldo para la noche siguiente) y como artefacto del job.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: factor-monitor-daily
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: factor_monitor
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE: daily-data
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: factor_monitor/requirements-lock.txt
+      - name: Instalar dependencias
+        run: pip install -r requirements-lock.txt && pip install --no-deps -e .
+
+      - name: Copia anterior
+        run: |
+          mkdir -p previous
+          gh release download "$RELEASE" --dir previous --clobber || echo "Sin copia anterior"
+
+      - name: Datos
+        id: data
+        run: |
+          set +e
+          python -m factor_monitor.daily.run --out daily_out --previous previous
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Resumen
+        if: always()
+        run: |
+          python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json, pandas as pd
+          m = json.load(open("daily_out/data_meta.json"))
+          print(f"### Datos hasta {m['data_end']}\n")
+          print("Fuentes:", m["sources"], "\n")
+          for k, t in m["tracking"].items():
+              print(f"- {k}: R² sectores→índice {t['r2']:.4f}, error de seguimiento {t['te_annual']:.2%} anual")
+          cov = pd.read_csv("daily_out/coverage.csv")
+          print("\n```\n" + cov[["id", "source", "symbol", "first", "last", "n", "stale"]].to_string(index=False) + "\n```")
+          if m["warnings"]:
+              print("\n#### Avisos\n")
+              for w in m["warnings"]:
+                  print(f"- [{w['step']}] {w['message']}")
+          EOF
+
+      - name: Guardar en la release
+        if: always()
+        run: |
+          gh release view "$RELEASE" >/dev/null 2>&1 || gh release create "$RELEASE" --title "Datos diarios" --notes "Última descarga del informe diario (se sobrescribe cada noche)." || true
+          gh release upload "$RELEASE" daily_out/* --clobber
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily_out
+          path: factor_monitor/daily_out
+          retention-days: 14
+
+      - name: Estado final
+        run: exit "${{ steps.data.outputs.exit_code || 1 }}"
