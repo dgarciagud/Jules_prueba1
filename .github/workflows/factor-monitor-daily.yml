@@ -1,10 +1,13 @@
 name: factor-monitor daily
 
-# Informe diario de sectores y factores. Paso 1: descarga de cierres diarios (Yahoo, Stooq de
-# respaldo), pesos sectoriales y comprobación. Paso 2: atribución sectorial y fuerza relativa. Paso 3: Shapley por sector. La salida se guarda en la release `daily-data`
-# (respaldo para la noche siguiente) y como artefacto del job.
+# Informe diario de sectores y factores: descarga de cierres diarios (Yahoo, Stooq de respaldo),
+# pesos sectoriales, atribución, fuerza relativa y factores por sector. Publica index.html en la
+# rama `results` (GitHub Pages) y guarda los datos en la release `daily-data` (respaldo para la
+# noche siguiente).
 
 on:
+  schedule:
+    - cron: "40 22 * * 1-5"   # tras el cierre de EE.UU. (22:00 UTC en invierno)
   workflow_dispatch:
 
 concurrency:
@@ -45,7 +48,7 @@ jobs:
         id: data
         run: |
           set +e
-          python -m factor_monitor.daily.run --out daily_out --previous previous
+          python -m factor_monitor.daily.run --out daily_out --previous previous --site site
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
 
       - name: Resumen
@@ -85,11 +88,36 @@ jobs:
           gh release view "$RELEASE" >/dev/null 2>&1 || gh release create "$RELEASE" --title "Datos diarios" --notes "Última descarga del informe diario (se sobrescribe cada noche)." || true
           gh release upload "$RELEASE" daily_out/* --clobber
 
+      - name: Publicar en GitHub Pages (rama results)
+        if: always()
+        working-directory: .
+        run: |
+          [ -f factor_monitor/site/index.html ] || { echo "Sin informe"; exit 0; }
+          git config user.name "factor-monitor[bot]"
+          git config user.email "factor-monitor@users.noreply.github.com"
+          if git fetch --depth 1 origin results; then
+            git worktree add pages FETCH_HEAD && git -C pages checkout -q -B results
+          else
+            git worktree add --orphan -b results pages
+          fi
+          find pages -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp factor_monitor/site/index.html factor_monitor/site/.nojekyll factor_monitor/daily_out/data_meta.json pages/
+          cd pages
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Sin cambios"
+          else
+            git commit -q -m "informe $(date -u +%F)"
+            git push -q origin results
+          fi
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: daily_out
-          path: factor_monitor/daily_out
+          path: |
+            factor_monitor/daily_out
+            factor_monitor/site
           retention-days: 14
 
       - name: Estado final

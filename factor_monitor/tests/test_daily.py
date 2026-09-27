@@ -292,3 +292,30 @@ def test_truncated_download_is_completed_with_previous_copy():
     ml = prices[prices["id"] == "ML.PA"]
     assert len(ml) == len(full) and cov.set_index("id").loc["ML.PA", "source"] == "yahoo+anterior"
     assert any("ML.PA" in w["message"] for w in runlog.warnings)
+
+
+# ----------------------------------------------------------------------------- informe
+
+from factor_monitor.daily.report import bars_svg, write_report  # noqa: E402
+
+
+def test_report_end_to_end(tmp_path):
+    universe = load_daily_universe()
+    out = tmp_path / "out"
+    assert run_data(universe, out, FakeYahoo(), None, None) == 0
+    path = write_report(out, tmp_path / "site", {k: v.name for k, v in universe.indices.items()})
+    page = path.read_text(encoding="utf-8")
+    assert (tmp_path / "site" / ".nojekyll").exists()
+    for h in ("Qué sectores lo han movido", "Fuerza relativa de los sectores", "Qué factor macro mueve cada sector", "Datos y método"):
+        assert h in page
+    assert 'data-ix="SPX"' in page and 'data-ix="CAC"' in page and "Acciones que más suman" in page
+    import re
+
+    assert not re.search(r"\b(None|nan|NaN|NaT)\b", page)
+    assert "prefers-color-scheme:dark" in page
+
+
+def test_bars_diverging_geometry():
+    h = bars_svg([("A", 0.02, "a"), ("B", -0.01, "b"), ("Residuo", 0.0, "r")], "t")
+    assert 'class="pos"' in h and 'class="neg"' in h and 'class="res"' in h
+    assert "left:33.33%" in h  # el cero está a 1/3 del ancho: rango [−1, +2]

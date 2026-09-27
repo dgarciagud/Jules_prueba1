@@ -32,6 +32,7 @@ import pandas as pd
 from ..common.runlog import RunLog
 from .attribution import attribution_table, daily_sector_contributions, relative_strength
 from .factors import sector_factor_shapley
+from .report import write_report
 from .data import RefWeights, download_all, mark_stale, reference_weights, sector_returns, tracking, wide
 from .sources import Http, Stooq, Yahoo
 from .universe import DailyUniverse, load_daily_universe
@@ -150,14 +151,23 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--universe", default=None)
     p.add_argument("--no-stooq", action="store_true")
     p.add_argument("--offline", action="store_true", help="No descarga: recalcula el análisis sobre los datos de --out")
+    p.add_argument("--site", default=None, help="Directorio donde escribir el informe HTML (index.html)")
     a = p.parse_args(argv)
     universe = load_daily_universe(a.universe)
+    out = Path(a.out)
     if a.offline:
         runlog = RunLog()
-        ok = run_analysis(universe, Path(a.out), runlog)
-        runlog.merge_into(Path(a.out) / "data_meta.json")
-        sys.exit(0 if ok else 1)
-    sys.exit(run_data(universe, Path(a.out), Yahoo(Http()), None if a.no_stooq else Stooq(), Path(a.previous) if a.previous else None))
+        code = 0 if run_analysis(universe, out, runlog) else 1
+        runlog.merge_into(out / "data_meta.json")
+    else:
+        code = run_data(universe, out, Yahoo(Http()), None if a.no_stooq else Stooq(), Path(a.previous) if a.previous else None)
+    if a.site and (out / "data_meta.json").exists():
+        try:  # el informe se genera siempre, aunque falle algún paso (muestra los avisos)
+            write_report(out, Path(a.site), {k: v.name for k, v in universe.indices.items()})
+        except Exception:  # noqa: BLE001
+            log.exception("Informe HTML fallido")
+            code = 1
+    sys.exit(code)
 
 
 if __name__ == "__main__":

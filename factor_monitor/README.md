@@ -13,7 +13,7 @@ sector. Datos de cierre diario; se calcula cada noche en GitHub Actions.
 | 1 | Cierres diarios (Yahoo, Stooq de respaldo), pesos sectoriales, comprobación | hecho |
 | 2 | Atribución sectorial (1D…1A) y fuerza relativa | hecho |
 | 3 | Shapley por sector: qué factor macro mueve cada sector | hecho |
-| 4 | Informe en GitHub Pages y ejecución nocturna automática | pendiente |
+| 4 | Informe en GitHub Pages y ejecución nocturna automática | hecho |
 
 El monitor intradía anterior (Dukascopy, MT5, dashboard Streamlit) se eliminó; está en el historial de git.
 
@@ -58,6 +58,7 @@ pytest
 
 python -m factor_monitor.daily.run --out daily_out            # descarga y análisis
 python -m factor_monitor.daily.run --out daily_out --offline  # solo el análisis, sobre una descarga existente
+python -m factor_monitor.daily.run --out daily_out --offline --site site  # y el informe HTML en site/index.html
 ```
 
 Salida en `--out`: `prices.parquet`, `coverage.csv`, `weights_ref.json`, `sectors.parquet`,
@@ -67,5 +68,14 @@ Salida en `--out`: `prices.parquet`, `coverage.csv`, `weights_ref.json`, `sector
 ## GitHub Actions
 
 - `factor-monitor tests`: en cada push que toque `factor_monitor/`.
-- `factor-monitor daily`: manual por ahora (programado en el paso 4). Guarda la salida en la release
-  `daily-data` y resume la cobertura, el seguimiento de los pesos y la atribución semanal.
+- `factor-monitor daily`: de lunes a viernes a las 22:40 UTC (y a mano). Publica el informe en la rama
+  `results`, que sirve GitHub Pages: **https://dgarciagud.github.io/Jules_prueba1/**. Guarda los datos en
+  la release `daily-data` y resume cobertura, seguimiento de los pesos, atribución semanal y factores.
+  La programación solo corre desde la rama principal del repositorio.
+
+## Informe
+
+Por índice (S&P 500 / CAC 40): resumen de rentabilidades; atribución sectorial por periodo (y las
+acciones que más suman y restan en el CAC 40); fuerza relativa por horizonte y gráfico de rotación;
+mapa de factores por sector y cambios de régimen (factor dominante ahora, hace 6 y 12 meses).
+Colores: azul positivo, rojo negativo, intensidad según el valor; los sectores van siempre con su nombre.
