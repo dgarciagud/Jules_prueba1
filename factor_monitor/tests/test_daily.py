@@ -173,3 +173,55 @@ def test_run_data_end_to_end(tmp_path):
     last = sectors[sectors["date"] == sectors["date"].max()]
     assert np.allclose(last.groupby("index")["weight"].sum(), 1)
     assert wide(pd.read_parquet(tmp_path / "prices.parquet")).shape[1] == len(universe.all_series())
+
+
+# ----------------------------------------------------------------------------- atribución
+
+from factor_monitor.daily.attribution import attribution_table, daily_sector_contributions, linked, relative_strength  # noqa: E402
+
+
+def basket_ref(w_true, sectors):
+    return RefWeights("CAC", "x", "components", {}, {m: {"sector": sectors[m], "weight": float(w_true[m])} for m in sectors}, "test")
+
+
+def test_attribution_adds_up_to_index_for_every_period():
+    px, level, w_true = synthetic_index(n=400)
+    sectors = {"A": "s1", "B": "s1", "D": "s2", "E": "s2"}
+    cal = px.assign(CAC=level)
+    t = attribution_table("CAC", cal, basket_ref(w_true, sectors), {"s1": "Uno", "s2": "Dos"}, {})
+    for period, g in t.groupby("period"):
+        total = g.loc[g.level == "index", "contribution"].iloc[0]
+        assert np.isclose(g.loc[g.level == "sector", "contribution"].sum(), total, atol=1e-10), period
+        assert np.isclose(g.loc[g.level == "member", "contribution"].sum(), total, atol=1e-10), period
+        assert abs(g.loc[g.level == "residual", "contribution"].iloc[0]) < 1e-10
+    one_day = t[(t.period == "1D") & (t.level == "index")]["contribution"].iloc[0]
+    assert np.isclose(one_day, level.iloc[-1] / level.iloc[-2] - 1)
+    ytd = t[(t.period == "YTD") & (t.level == "index")].iloc[0]
+    first_2026 = level[level.index.year == level.index[-1].year].index[0]
+    assert ytd["from"] == first_2026.date().isoformat()
+    # rentabilidad de un sector = la de su cesta de acciones fijas
+    y1 = t[(t.period == "1A") & (t.id == "s1")].iloc[0]
+    shares = w_true[["A", "B"]] / px.iloc[-1][["A", "B"]]
+    basket = (px[["A", "B"]] * shares).sum(axis=1)
+    assert np.isclose(y1["ret"], basket.iloc[-1] / basket.iloc[-253] - 1)
+
+
+def test_linked_contributions_compound():
+    dates = pd.bdate_range("2025-01-01", periods=3)
+    c = pd.DataFrame({"x": [0.10, -0.05, 0.02]}, index=dates)
+    r = pd.Series([0.10, -0.05, 0.02], index=dates)
+    contrib, total = linked(c, r, 0)
+    assert np.isclose(total, 1.10 * 0.95 * 1.02 - 1) and np.isclose(contrib["x"], total)
+
+
+def test_relative_strength_and_daily_contributions():
+    px, level, w_true = synthetic_index(n=400)
+    px["A"] = px["A"] * np.exp(np.linspace(0, 3.0, len(px)))  # A sube mucho más que el resto
+    cal = px.assign(CAC=(px * (w_true / px.iloc[-1])).sum(axis=1))
+    ref = basket_ref(w_true, {"A": "fuerte", "B": "flojo", "D": "flojo", "E": "flojo"})
+    rs = relative_strength("CAC", cal, ref, {})
+    r3 = rs[rs.horizon == "3M"].set_index("sector")["rs"]
+    assert r3["fuerte"] > 0 > r3["flojo"]
+    d = daily_sector_contributions("CAC", cal, ref, sessions=50)
+    per_day = d.groupby("date").agg(c=("contribution", "sum"), r=("index_ret", "first"))
+    assert len(per_day) == 50 and np.allclose(per_day["c"], per_day["r"], atol=1e-12)

@@ -1,7 +1,7 @@
 name: factor-monitor daily
 
 # Informe diario de sectores y factores. Paso 1: descarga de cierres diarios (Yahoo, Stooq de
-# respaldo), pesos sectoriales y comprobación. La salida se guarda en la release `daily-data`
+# respaldo), pesos sectoriales y comprobación. Paso 2: atribución sectorial y fuerza relativa. La salida se guarda en la release `daily-data`
 # (respaldo para la noche siguiente) y como artefacto del job.
 
 on:
@@ -58,6 +58,12 @@ jobs:
           print("Fuentes:", m["sources"], "\n")
           for k, t in m["tracking"].items():
               print(f"- {k}: R² sectores→índice {t['r2']:.4f}, error de seguimiento {t['te_annual']:.2%} anual")
+          a = pd.read_parquet("daily_out/attribution.parquet")
+          for ix, g in a[(a.period == "1S") & a.level.isin(["index", "sector", "residual"])].groupby("index"):
+              tot = g[g.level == "index"].iloc[0]
+              print(f"\n#### {ix}: {tot['contribution']:+.2%} en la semana ({tot['from']} a {tot['to']})\n")
+              for _, r in g[g.level != "index"].sort_values("contribution", ascending=False).iterrows():
+                  print(f"- {r['name']}: {r['contribution'] * 100:+.2f} pp")
           cov = pd.read_csv("daily_out/coverage.csv")
           print("\n```\n" + cov[["id", "source", "symbol", "first", "last", "n", "stale"]].to_string(index=False) + "\n```")
           if m["warnings"]:
