@@ -72,8 +72,8 @@ jobs:
           for ix, g in f.groupby("index"):
               print(f"\n#### {ix}: factor macro principal por sector (ventana de 6 meses)\n")
               for t, gg in g.groupby("target_name"):
-                  m = gg[gg.factor != "MKT"].sort_values("shapley", ascending=False).iloc[0]
-                  print(f"- {t}: {m['factor']} {m['share']:.0%} ({'+' if m['std_beta'] > 0 else '−'}), R² {m['r2']:.2f}")
+                  top = gg[gg.factor != "MKT"].sort_values("shapley", ascending=False).iloc[0]
+                  print(f"- {t}: {top['factor']} {top['share']:.0%} ({'+' if top['std_beta'] > 0 else '−'}), R² {top['r2']:.2f}")
           cov = pd.read_csv("daily_out/coverage.csv")
           print("\n```\n" + cov[["id", "source", "symbol", "first", "last", "n", "stale"]].to_string(index=False) + "\n```")
           if m["warnings"]:
