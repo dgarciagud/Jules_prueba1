@@ -92,7 +92,7 @@ def run_data(universe: DailyUniverse, out: Path, yahoo: Yahoo, stooq: Stooq | No
 
     n_fail = int(coverage["source"].isna().sum())
     runlog.step("data", "ok" if n_fail == 0 else "partial", series=len(coverage), failed=n_fail,
-                from_previous=int((coverage["source"] == "anterior").sum()))  # fmt: skip
+                from_previous=int(coverage["source"].fillna("").str.contains("anterior").sum()))  # fmt: skip
     ok_analysis = run_analysis(universe, out, runlog, prices=prices, weights=weights)
     idx_last = coverage.loc[coverage["role"] == "index", "last"]
     meta = {

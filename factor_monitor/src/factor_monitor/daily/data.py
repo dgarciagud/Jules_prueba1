@@ -53,8 +53,16 @@ def download_all(
             if got is not None:
                 df, source = got, name
                 break
-        if df is None and previous is not None and (previous["id"] == s.id).any():
-            df = previous[previous["id"] == s.id][["date", "close", "adjclose"]].copy()
+        prev_s = previous[previous["id"] == s.id] if previous is not None else None
+        if df is not None and prev_s is not None and len(prev_s) and len(df) < 0.9 * len(prev_s):
+            # descarga truncada (Yahoo a veces devuelve solo los últimos días): se completa con la copia anterior
+            older = prev_s[prev_s["date"] < df["date"].min()][["date", "close", "adjclose"]]
+            runlog.warn("data", f"{s.id}: {source} devolvió {len(df)} sesiones frente a {len(prev_s)} de la copia anterior; "
+                                f"se completa con ella")  # fmt: skip
+            df = pd.concat([older, df], ignore_index=True)
+            source = f"{source}+anterior"
+        if df is None and prev_s is not None and len(prev_s):
+            df = prev_s[["date", "close", "adjclose"]].copy()
             source = "anterior"
             runlog.warn("data", f"{s.id}: sin descarga ({'; '.join(errors)}); se usa la copia anterior")
         elif df is None:
@@ -64,7 +72,7 @@ def download_all(
         rows.append(
             {
                 "id": s.id, "name": s.name, "role": s.role, "index": s.index, "source": source,
-                "symbol": s.yahoo if source == "yahoo" else s.stooq if source == "stooq" else None,
+                "symbol": s.yahoo if str(source).startswith("yahoo") else s.stooq if str(source).startswith("stooq") else None,
                 "first": df["date"].min() if df is not None else pd.NaT,
                 "last": df["date"].max() if df is not None else pd.NaT,
                 "n": 0 if df is None else len(df),

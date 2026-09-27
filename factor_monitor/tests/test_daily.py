@@ -276,3 +276,19 @@ def test_sector_driven_by_factor_gets_the_macro_share():
     assert e.loc["OIL", "share"] > 0.9 and e.loc["OIL", "std_beta"] > 0
     assert set(d.target) == {"energy", "industrials", fx.INDEX_TARGET}
     assert "MKT" not in set(d[d.target == fx.INDEX_TARGET].factor)
+
+
+def test_truncated_download_is_completed_with_previous_copy():
+    universe = load_daily_universe()
+
+    class Truncating(FakeYahoo):
+        def history(self, symbol, start):
+            df = super().history(symbol, start)
+            return df.tail(1) if symbol == "ML.PA" else df
+
+    full = FakeYahoo().history("ML.PA", None).assign(id="ML.PA")
+    runlog = RunLog()
+    prices, cov = download_all(universe, Truncating(), None, full, runlog)
+    ml = prices[prices["id"] == "ML.PA"]
+    assert len(ml) == len(full) and cov.set_index("id").loc["ML.PA", "source"] == "yahoo+anterior"
+    assert any("ML.PA" in w["message"] for w in runlog.warnings)
