@@ -1,87 +1,98 @@
 {
-  "as_of": "2024-12-30",
-  "valid_from": "2025-01-06",
-  "valid_to": "2025-01-10",
+  "as_of": "2026-09-25",
+  "valid_from": "2026-09-28",
+  "valid_to": "2026-10-02",
   "targets": {
     "SPX": {
       "status": "ok",
       "factors": [
-        "BRENT"
+        "BRENT",
+        "USD"
       ],
       "market": false,
       "shares": {
-        "BRENT": 0.9733959572262041,
-        "USD": 0.02660404277379587
+        "BRENT": 0.8487165604206707,
+        "USD": 0.1512834395793293
       },
       "signs": {
         "BRENT": -1,
-        "USD": 0
-      },
-      "estimate_date": "2024-12-30"
-    },
-    "SX5E": {
-      "status": "ok",
-      "factors": [
-        "IA",
-        "USD"
-      ],
-      "market": true,
-      "shares": {
-        "BRENT": 0.06238292735738806,
-        "IA": 0.49960019762537805,
-        "USD": 0.4380168750172313
-      },
-      "signs": {
-        "BRENT": 1,
-        "IA": 1,
         "USD": -1
       },
-      "estimate_date": "2024-12-30"
+      "estimate_date": "2026-09-25"
     },
-    "DAX": {
+    "SX5E": {
       "status": "ok",
       "factors": [
         "IA"
       ],
       "market": true,
       "shares": {
-        "BRENT": 0.10299865826965604,
-        "IA": 0.7493585899606898,
-        "USD": 0.1476427517696548
+        "BRENT": 0.022895368430462432,
+        "IA": 0.9689566991561793,
+        "USD": 0.008147932413357943
       },
       "signs": {
-        "BRENT": 1,
+        "BRENT": 0,
         "IA": 1,
-        "USD": -1
+        "USD": 1
       },
-      "estimate_date": "2020-12-30"
+      "estimate_date": "2026-09-25"
     },
-    "CAC": {
+    "DAX": {
       "status": "ok",
       "factors": [
-        "USD",
-        "IA",
         "BRENT"
       ],
       "market": true,
       "shares": {
-        "BRENT": 0.2336193922709975,
-        "IA": 0.3816236665952096,
-        "USD": 0.38475694113379905
+        "BRENT": 0.8463626947510784,
+        "IA": 0.10163684366898756,
+        "USD": 0.052000461579939726
       },
       "signs": {
         "BRENT": -1,
         "IA": -1,
-        "USD": 1
+        "USD": -1
       },
       "estimate_date": "2024-12-30"
     },
-    "IBEX": {
-      "status": "sin_datos",
-      "factors": [],
+    "CAC": {
+      "status": "ok",
+      "factors": [
+        "IA"
+      ],
       "market": true,
-      "shares": {},
-      "signs": {}
+      "shares": {
+        "BRENT": 0.00047405000732288503,
+        "IA": 0.848752443364581,
+        "USD": 0.15077350662809463
+      },
+      "signs": {
+        "BRENT": -1,
+        "IA": -1,
+        "USD": 0
+      },
+      "estimate_date": "2026-09-25"
+    },
+    "IBEX": {
+      "status": "ok",
+      "factors": [
+        "USD",
+        "BRENT",
+        "IA"
+      ],
+      "market": true,
+      "shares": {
+        "BRENT": 0.2321600531674295,
+        "IA": 0.19847380974353399,
+        "USD": 0.5693661370890389
+      },
+      "signs": {
+        "BRENT": -1,
+        "IA": -1,
+        "USD": -1
+      },
+      "estimate_date": "2026-09-25"
     },
     "BANKS": {
       "status": "sin_datos",

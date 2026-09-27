@@ -3,29 +3,29 @@
   "z_floor": 2.0,
   "targets": {
     "SPX": {
-      "r2_median": 0.10515732096568742,
-      "z_star": 2.0,
-      "sessions": 1187
+      "r2_median": 0.11488279042313376,
+      "z_star": 2.835,
+      "sessions": 1865
     },
     "SX5E": {
-      "r2_median": 0.85421649411708,
-      "z_star": 2.913,
-      "sessions": 946
+      "r2_median": 0.7911334893989069,
+      "z_star": 2.765,
+      "sessions": 1645
     },
     "DAX": {
-      "r2_median": 0.8846821801948016,
-      "z_star": 3.175,
-      "sessions": 452
-    },
-    "CAC": {
-      "r2_median": 0.8482339051153568,
-      "z_star": 2.925,
+      "r2_median": 0.7989719987047463,
+      "z_star": 2.674,
       "sessions": 946
     },
+    "CAC": {
+      "r2_median": 0.661293726826241,
+      "z_star": 2.905,
+      "sessions": 1643
+    },
     "IBEX": {
-      "r2_median": null,
-      "z_star": 2.5,
-      "sessions": 0
+      "r2_median": 0.5515714441860576,
+      "z_star": 3.007,
+      "sessions": 386
     },
     "BANKS": {
       "r2_median": null,
