@@ -1,7 +1,7 @@
 name: factor-monitor daily
 
 # Informe diario de sectores y factores. Paso 1: descarga de cierres diarios (Yahoo, Stooq de
-# respaldo), pesos sectoriales y comprobación. Paso 2: atribución sectorial y fuerza relativa. La salida se guarda en la release `daily-data`
+# respaldo), pesos sectoriales y comprobación. Paso 2: atribución sectorial y fuerza relativa. Paso 3: Shapley por sector. La salida se guarda en la release `daily-data`
 # (respaldo para la noche siguiente) y como artefacto del job.
 
 on:
@@ -64,6 +64,13 @@ jobs:
               print(f"\n#### {ix}: {tot['contribution']:+.2%} en la semana ({tot['from']} a {tot['to']})\n")
               for _, r in g[g.level != "index"].sort_values("contribution", ascending=False).iterrows():
                   print(f"- {r['name']}: {r['contribution'] * 100:+.2f} pp")
+          f = pd.read_parquet("daily_out/factor_shapley.parquet")
+          f = f[f.date == f.groupby("index").date.transform("max")]
+          for ix, g in f.groupby("index"):
+              print(f"\n#### {ix}: factor macro principal por sector (ventana de 6 meses)\n")
+              for t, gg in g.groupby("target_name"):
+                  m = gg[gg.factor != "MKT"].sort_values("shapley", ascending=False).iloc[0]
+                  print(f"- {t}: {m['factor']} {m['share']:.0%} ({'+' if m['std_beta'] > 0 else '−'}), R² {m['r2']:.2f}")
           cov = pd.read_csv("daily_out/coverage.csv")
           print("\n```\n" + cov[["id", "source", "symbol", "first", "last", "n", "stale"]].to_string(index=False) + "\n```")
           if m["warnings"]:

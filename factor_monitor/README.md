@@ -12,7 +12,7 @@ sector. Datos de cierre diario; se calcula cada noche en GitHub Actions.
 |---|---|---|
 | 1 | Cierres diarios (Yahoo, Stooq de respaldo), pesos sectoriales, comprobación | hecho |
 | 2 | Atribución sectorial (1D…1A) y fuerza relativa | hecho |
-| 3 | Shapley por sector: qué factor macro mueve cada sector | en curso |
+| 3 | Shapley por sector: qué factor macro mueve cada sector | hecho |
 | 4 | Informe en GitHub Pages y ejecución nocturna automática | pendiente |
 
 El monitor intradía anterior (Dukascopy, MT5, dashboard Streamlit) se eliminó; está en el historial de git.
@@ -42,6 +42,12 @@ de cada periodo: sectores + residuo suman exactamente la rentabilidad del índic
 
 **Fuerza relativa.** (1 + R_sector) / (1 + R_índice) − 1 por horizonte, y su cambio en un mes.
 
+**Factores por sector.** En ventanas de 126 sesiones: r_sector = a + b·r_índice + Σ g_f·f⊥ + e, con cada
+factor ortogonalizado respecto al índice. El R² se reparte con Shapley (LMG); la cuota macro de un factor
+es Shapley_f / (R² − Shapley_índice), con el signo de su beta. Para el índice se usan los factores sin
+ortogonalizar. En el CAC 40 (cierra antes que EE.UU.) las rentabilidades son de 2 días solapadas.
+Estimaciones a fin de cada mes de los últimos 5 años, para ver cambios de régimen.
+
 ## Uso
 
 ```bash
@@ -55,7 +61,8 @@ python -m factor_monitor.daily.run --out daily_out --offline  # solo el análisi
 ```
 
 Salida en `--out`: `prices.parquet`, `coverage.csv`, `weights_ref.json`, `sectors.parquet`,
-`attribution.parquet`, `relative_strength.parquet`, `contributions_daily.parquet`, `data_meta.json`.
+`attribution.parquet`, `relative_strength.parquet`, `contributions_daily.parquet`, `factor_shapley.parquet`,
+`data_meta.json`.
 
 ## GitHub Actions
 

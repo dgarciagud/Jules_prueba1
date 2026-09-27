@@ -12,6 +12,9 @@ Paso 2 (`run_analysis`, también con --offline sobre una salida existente):
   attribution.parquet     aportación por periodo (1D…1A) de cada sector y, en el CAC 40, cada acción
   relative_strength.parquet  fuerza relativa de cada sector frente a su índice por horizonte
   contributions_daily.parquet  aportación diaria por sector (últimos dos años)
+Paso 3:
+  factor_shapley.parquet  Shapley del R² de cada sector (y del índice) sobre el índice y los factores
+                          macro, en ventanas de 6 meses a fin de cada mes (5 años) y en la última fecha
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ import pandas as pd
 
 from ..common.runlog import RunLog
 from .attribution import attribution_table, daily_sector_contributions, relative_strength
+from .factors import sector_factor_shapley
 from .data import RefWeights, download_all, mark_stale, reference_weights, sector_returns, tracking, wide
 from .sources import Http, Stooq, Yahoo
 from .universe import DailyUniverse, load_daily_universe
@@ -113,7 +117,7 @@ def run_analysis(universe: DailyUniverse, out: Path, runlog: RunLog, prices: pd.
     weights = weights if weights is not None else json.loads((out / "weights_ref.json").read_text(encoding="utf-8"))
     close = wide(prices, "close")
     names = {s.id: s.name for s in universe.all_series()}
-    attr, rs, daily = [], [], []
+    attr, rs, daily, shap = [], [], [], []
     try:
         for iid in universe.indices:
             if iid not in weights or iid not in close:
@@ -124,10 +128,12 @@ def run_analysis(universe: DailyUniverse, out: Path, runlog: RunLog, prices: pd.
             attr.append(attribution_table(iid, cal, ref, universe.sector_names, names))
             rs.append(relative_strength(iid, cal, ref, universe.sector_names))
             daily.append(daily_sector_contributions(iid, cal, ref))
+            shap.append(sector_factor_shapley(iid, universe.indices[iid].region, cal, close, ref, universe))
         if attr:
             pd.concat(attr, ignore_index=True).to_parquet(out / "attribution.parquet", index=False)
             pd.concat(rs, ignore_index=True).to_parquet(out / "relative_strength.parquet", index=False)
             pd.concat(daily, ignore_index=True).to_parquet(out / "contributions_daily.parquet", index=False)
+            pd.concat(shap, ignore_index=True).to_parquet(out / "factor_shapley.parquet", index=False)
         runlog.step("attribution", "ok" if attr else "failed", indices=len(attr))
         return bool(attr)
     except Exception as e:  # noqa: BLE001 - el paso 2 no debe tirar la descarga

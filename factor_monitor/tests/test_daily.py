@@ -225,3 +225,54 @@ def test_relative_strength_and_daily_contributions():
     d = daily_sector_contributions("CAC", cal, ref, sessions=50)
     per_day = d.groupby("date").agg(c=("contribution", "sum"), r=("index_ret", "first"))
     assert len(per_day) == 50 and np.allclose(per_day["c"], per_day["r"], atol=1e-12)
+
+
+# ----------------------------------------------------------------------------- factores
+
+from factor_monitor.daily import factors as fx  # noqa: E402
+
+
+def test_orthogonalize_removes_market():
+    rng = np.random.default_rng(3)
+    m = pd.Series(rng.normal(size=200))
+    F = pd.DataFrame({"f": 0.8 * m + rng.normal(size=200)})
+    Fp = fx.orthogonalize(F, m)
+    assert abs(np.corrcoef(Fp["f"], m)[0, 1]) < 1e-10
+
+
+def test_factor_changes_by_kind():
+    universe = load_daily_universe()
+    dates = pd.bdate_range("2025-01-01", periods=3)
+    close = pd.DataFrame({"OIL": [100.0, 110.0, 99.0], "US10Y": [4.0, 4.1, np.nan]}, index=dates)
+    ch = fx.factor_changes(close, universe, dates)
+    assert np.isclose(ch["OIL"].iloc[1], np.log(1.1)) and np.isclose(ch["US10Y"].iloc[1], 0.1)
+    assert ch["US10Y"].iloc[2] == 0.0  # sin dato: se arrastra el nivel
+
+
+def test_snapshot_dates_month_ends():
+    dates = pd.bdate_range("2019-01-01", "2026-09-25")
+    snaps = fx.snapshot_dates(dates, years=1)
+    assert snaps[-1] == dates[-1] and pd.Timestamp("2026-08-31") in snaps and len(snaps) in (12, 13)
+
+
+def test_sector_driven_by_factor_gets_the_macro_share():
+    rng = np.random.default_rng(4)
+    n = 300
+    dates = pd.bdate_range("2025-01-01", periods=n)
+    m = rng.normal(0, 0.01, n)
+    oil = rng.normal(0, 0.02, n)
+    usd = rng.normal(0, 0.005, n)
+    energy = 0.8 * m + 0.5 * oil + rng.normal(0, 0.003, n)
+    other = 1.0 * m + rng.normal(0, 0.004, n)
+    lv = lambda r: 100 * np.exp(np.cumsum(r))  # noqa: E731
+    cal = pd.DataFrame({"E": lv(energy), "O": lv(other)}, index=dates)
+    cal["CAC"] = 0.5 * cal["E"] / cal["E"].iloc[-1] + 0.5 * cal["O"] / cal["O"].iloc[-1]
+    close = cal.assign(OIL=lv(oil), USD=lv(usd))
+    universe = load_daily_universe()
+    ref = RefWeights("CAC", "x", "components", {}, {"E": {"sector": "energy", "weight": 0.5}, "O": {"sector": "industrials", "weight": 0.5}}, "t")
+    d = fx.sector_factor_shapley("CAC", "us", cal, close, ref, universe, snapshots=False)
+    e = d[d.target == "energy"].set_index("factor")
+    assert np.isclose(e["shapley"].sum(), e["r2"].iloc[0])
+    assert e.loc["OIL", "share"] > 0.9 and e.loc["OIL", "std_beta"] > 0
+    assert set(d.target) == {"energy", "industrials", fx.INDEX_TARGET}
+    assert "MKT" not in set(d[d.target == fx.INDEX_TARGET].factor)

@@ -61,26 +61,26 @@ def ols(y: pd.Series, X: pd.DataFrame, hac_lags: int | None = None) -> OLSResult
     return OLSResult(params, se_s, t, std_b, float(r2), n)
 
 
-def _r2(yv: np.ndarray, xv: np.ndarray) -> float:
-    if xv.shape[1] == 0:
-        return 0.0
-    Z = np.column_stack([np.ones(len(yv)), xv])
-    beta, *_ = np.linalg.lstsq(Z, yv, rcond=None)
-    resid = yv - Z @ beta
-    tss = ((yv - yv.mean()) ** 2).sum()
-    return float(1 - (resid @ resid) / tss) if tss > 0 else 0.0
-
-
 def shapley_lmg(y: pd.Series, X: pd.DataFrame) -> pd.Series:
-    """Descomposición Shapley (LMG) del R²: la suma de las contribuciones es el R² total."""
+    """Descomposición Shapley (LMG) del R²: la suma de las contribuciones es el R² total.
+
+    El R² de cada subconjunto S sale de las covarianzas, R²_S = c_Sᵀ Σ_SS⁻¹ c_S / var(y),
+    sin repetir la regresión.
+    """
     yv, xv, _ = _clean(y, X)
     k = xv.shape[1]
     if k > MAX_SHAPLEY_REGRESSORS:
         raise ValueError(f"Shapley con {k} regresores es demasiado costoso (máx. {MAX_SHAPLEY_REGRESSORS})")
+    if len(yv) < 3 or yv.var() <= 0:
+        return pd.Series(np.zeros(k), index=X.columns)
+    xc, yc = xv - xv.mean(axis=0), yv - yv.mean()
+    sxx, sxy, syy = xc.T @ xc, xc.T @ yc, yc @ yc
     r2 = {(): 0.0}
     for size in range(1, k + 1):
         for subset in combinations(range(k), size):
-            r2[subset] = _r2(yv, xv[:, subset])
+            idx = list(subset)
+            beta = np.linalg.lstsq(sxx[np.ix_(idx, idx)], sxy[idx], rcond=None)[0]
+            r2[subset] = float(sxy[idx] @ beta / syy)
     contrib = np.zeros(k)
     for j in range(k):
         others = [i for i in range(k) if i != j]
